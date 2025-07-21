@@ -1,0 +1,46 @@
+# Organization Insurance Classifier Configuration
+
+# Data Processing
+data:
+  excel_file: "data/raw/COP29_FLOP_On-site.xlsx"
+  excluded_sheets: ["temporary passes", "media"]
+  required_columns: ["Nominated by", "Name", "Home organization"]
+
+# Web Scraping
+scraping:
+  timeout: 10
+  max_retries: 3
+  retry_delay: 2
+  max_content_length: 2000
+  user_agent: "Mozilla/5.0 (compatible; OrgClassifier/1.0)"
+
+# AI Classification
+classification:
+  api_provider: "openrouter"
+  model: "google/gemini-2.0-flash-001"
+  max_tokens: 100
+  temperature: 0.1
+
+# Caching
+cache:
+  enabled: true
+  max_age_days: 30
+  cache_directory: "data/cache"
+
+# Logging
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_directory: "logs"
+  max_log_files: 10
+
+# Processing
+processing:
+  batch_size: 50
+  parallel_workers: 4
+  enable_progress_bar: true
+
+# Fuzzy matching for organization normalization
+fuzzy_matching:
+  threshold: 85  # Similarity threshold (0-100)
+  max_suggestions: 5  # Maximum number of similar names to consider

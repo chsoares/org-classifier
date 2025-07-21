@@ -1,0 +1,21 @@
+# Data processing
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# String matching for organization normalization
+rapidfuzz>=3.0.0
+
+# Web scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+urllib3>=2.0.0
+
+# AI/API integration
+python-dotenv>=1.0.0
+
+# Streamlit UI
+streamlit>=1.28.0
+plotly>=5.17.0
+
+# Logging and utilities
+pyyaml>=6.0.0

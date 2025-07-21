@@ -1,0 +1,46 @@
+Preciso da sua ajuda pra tentar construir uma aplicação.
+Aviso importante: NÃO SOU DEV!!!
+Sou um analista de dados que precisa encontrar um jeito de tratar um grande volume de dados originários de uma planilha do excel, e acredito que conseguimos fazer isso com programação + IA.
+Vamos começar conversando pra você me explicar e propor soluções. Quando tivermos algo mais concreto, partimos para o spec. Ok?
+
+Ponto de partida: COP29_FLOP_On-site.xlsx.
+Objetivo: Descobrir quais "Home Organization" são diretamente relacionadas à área de seguros (insurance).
+
+Primeiro, limpeza de dados:
+1. O arquivo tem 11 abas, ou spreadsheets, diferentes. Podemos ignorar as duas últimas: "temporary passes" e "media".
+2. As spreadsheets possuem colunas semelhantes. São importantes: "Nominated by", "Name" e "Home Organization". As outras, podemos dispensar.
+3. Podemos dar um merge em todos os spreadsheets e colunas úteis em uma única tabela, adicionando uma primeira coluna, "Type", para incluir o nome da spreadsheet originária.
+4. Home organization é a coluna mais importante, e também a mais problemática. Precisamos limpar as entradas semelhantes que deveriam ser iguais. Por exemplo, "African Development Bank Group" é o nome correto e o mais utilizado, mas algumas entradas são "African Development Bank". Proponho que a gente liste os valores únicos, faça um fuzz e que valores agrupados por semelhanças sejam renomeados pelo valor com maior ocorrência.
+
+Com a limpeza de dados feita, devemos partir pro objetivo principal, que é classificar Home Organization.
+Aqui, aceito ideias e soluções.
+Pensei em duas alternativas:
+1. Procurar a Home Organization no Google, entrar no primeiro resultado, raspar os conteúdos da homepage e/ou da página about, se houver, e enviar o conteúdo raspado para uma IA classificar em "Sim" ou "Não" sobre a relação com a área de insurance. Fiz algo parecido para um outro script meu, de classificação de setor econômico de ataques ransomware, e funciona muito bem. Coloquei os scripts em refs/classifier para você dar uma olhada.
+2. Aproveitar algum modelo de IA com capacidade de pesquisa na internet e pular toda essa parte de raspagem, apenas perguntando diretamente pra IA, com base nos resultados encontrados, se há relação com a área de insurance.
+
+Independente da maneira, precisamos fazer isso de forma eficiente, ou seja, apenas nos valores únicos de Home Organization, e não linha a linha na tabela de nomes, onde há muita repetição.
+
+
+Por fim, a apresentação dos resultados.
+Isso não é ponto principal do produto, apenas um extra, então proponho uma página simples do Streamlit. Coloco em refs/streamlit uma página que fiz recentemente, pra exibição de outros dados, para servir de referência de design e estilo.
+
+
+O que acha? Alguma pergunta, proposta, ideia...?
+
+
+===========================
+
+Para o scraping, proponho o seguinte:
+
+1. Criação de um segundo dataframe para as "home organizations".
+2. Criar colunas para acompanhar e registrar cada etapa do processo:
+- Se o website foi achado
+- Qual website visitado
+- Se a página foi raspada
+- Se o conteúdo foi classificado
+- Resultado da classificação
+Assim, conseguimos acompanhar os pontos de falha com maior detalhe.
+A classificação precisa ser apenas "Yes" ou "No" e acontecer somente se todo o processo deu certo. Caso aconteça erro em etapa anterior, ou a classificação falhe, temos colunas específicas para isso -- aceito sugestões para deixar esse procedimento mais robusto.
+
+Ao fim de tudo, adicionamos a coluna de is_Insurance na tabela de nomes, que é o resultado final.
+
