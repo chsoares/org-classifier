@@ -35,6 +35,7 @@
   - Filter out social media and irrelevant sites
   - Record which search method was successful
   - Handle search failures and network errors gracefully
+  - **IMPORTANT**: For government organizations (especially from "Parties" and "Party overflow" types), combine "Nominated by" + "Home organization" for better search results (e.g., "Albania Ministry of Tourism and Environment" instead of just "Ministry of Tourism and Environment")
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
 - [ ] 6. Adapt existing web scraping code for organization content
