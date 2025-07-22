@@ -42,7 +42,7 @@ processing:
 
 # Fuzzy matching for organization normalization
 fuzzy_matching:
-  threshold: 85  # Similarity threshold (0-100)
+  threshold: 92  # Similarity threshold (0-100) - increased to avoid false matches
   max_suggestions: 5  # Maximum number of similar names to consider
 
 # Data cleaning - values to be considered as null/empty and removed
