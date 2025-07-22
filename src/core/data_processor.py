@@ -31,6 +31,7 @@ class DataProcessor:
     def __init__(self):
         self.logger, _ = setup_logger("data_processor", log_to_file=True)
         self.config = config_manager.get_data_config()
+        self.cleaning_config = config_manager.get_data_cleaning_config()
         
         self.logger.info("📊 Inicializando Data Processor")
         self.logger.debug(f"Arquivo Excel: {self.config['excel_file']}")
@@ -125,6 +126,29 @@ class DataProcessor:
         # Reordenar colunas na ordem esperada
         filtered_df = filtered_df[required_cols]
         
+        # 1. PRIMEIRO: Dropar linhas com valores NA em Home organization
+        na_values_to_drop = [
+            "Not applicable", "Not Applicable", "not applicable", 
+            "-", ".", "none", "None", "NONE", "N/A", "n/a", "NA", "na"
+        ]
+        
+        initial_count = len(filtered_df)
+        # Dropar linhas onde Home organization é exatamente um dos valores NA
+        filtered_df = filtered_df[~filtered_df['Home organization'].isin(na_values_to_drop)]
+        dropped_count = initial_count - len(filtered_df)
+        
+        if dropped_count > 0:
+            self.logger.debug(f"🗑️ Removidas {dropped_count} linhas com valores NA em '{sheet_name}'")
+        
+        # 2. DEPOIS: Para Party overflow, adicionar Nominated by ao Home organization
+        if sheet_name.lower() == "party overflow" and len(filtered_df) > 0:
+            self.logger.debug(f"🔄 Aplicando lógica para '{sheet_name}': adicionando país às organizações")
+            
+            # SIMPLES: Nominated by + Home organization para todas as linhas
+            filtered_df['Home organization'] = filtered_df['Nominated by'] + " " + filtered_df['Home organization']
+            
+            self.logger.debug(f"   Adicionado país a {len(filtered_df)} organizações")
+        
         self.logger.debug(f"✅ Extraídas {len(existing_cols)} colunas de '{sheet_name}' ({len(filtered_df)} linhas)")
         
         return filtered_df
@@ -182,6 +206,56 @@ class DataProcessor:
             self.logger.info(f"   {sheet_type}: {count} linhas")
         
         return final_df
+    
+    def clean_null_organizations(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove linhas com valores de organização considerados nulos/vazios
+        
+        Args:
+            df: DataFrame para limpar
+            
+        Returns:
+            DataFrame limpo sem valores nulos configurados
+        """
+        self.logger.info("🧹 Iniciando limpeza de organizações nulas...")
+        
+        initial_count = len(df)
+        null_values = self.cleaning_config['null_organization_values']
+        
+        self.logger.debug(f"Valores considerados nulos: {null_values}")
+        
+        # Remover linhas onde 'Home organization' contém valores nulos
+        # Isso captura tanto valores diretos quanto combinados (ex: "Albania Not Applicable")
+        mask = pd.Series([True] * len(df), index=df.index)
+        
+        for null_value in null_values:
+            # Verificar valores exatos
+            exact_match = df['Home organization'] == null_value
+            
+            # Verificar valores que terminam com o valor nulo (para casos como "Albania Not Applicable")
+            ends_with_match = df['Home organization'].str.endswith(f" {null_value}", na=False)
+            
+            # Combinar as duas condições
+            current_mask = exact_match | ends_with_match
+            mask = mask & ~current_mask
+        
+        cleaned_df = df[mask].copy()
+        
+        removed_count = initial_count - len(cleaned_df)
+        
+        if removed_count > 0:
+            self.logger.info(f"🗑️ Removidas {removed_count} linhas com organizações nulas")
+            
+            # Mostrar estatísticas dos valores removidos
+            removed_df = df[~mask]
+            removed_counts = removed_df['Home organization'].value_counts()
+            for value, count in removed_counts.items():
+                self.logger.debug(f"   '{value}': {count} linhas removidas")
+        else:
+            self.logger.info("✅ Nenhuma linha com organização nula encontrada")
+        
+        self.logger.success(f"✨ Limpeza concluída: {len(cleaned_df)} linhas restantes")
+        return cleaned_df
     
     def validate_data_quality(self, df: pd.DataFrame) -> bool:
         """
@@ -252,18 +326,21 @@ class DataProcessor:
             # 2. Fazer merge
             merged_df = self.merge_spreadsheets(sheets)
             
-            # 3. Validar qualidade
-            if not self.validate_data_quality(merged_df):
+            # 3. Limpar organizações nulas
+            cleaned_df = self.clean_null_organizations(merged_df)
+            
+            # 4. Validar qualidade
+            if not self.validate_data_quality(cleaned_df):
                 self.logger.warning("⚠️ Dados passaram na validação com avisos")
             
-            # 4. Salvar dados processados
+            # 5. Salvar dados processados
             output_path = Path("data/processed/merged_data.csv")
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            merged_df.to_csv(output_path, index=False, encoding='utf-8')
+            cleaned_df.to_csv(output_path, index=False, encoding='utf-8')
             self.logger.info(f"💾 Dados salvos em: {output_path}")
             
             self.logger.success("✨ Processamento do Excel concluído com sucesso!")
-            return merged_df
+            return cleaned_df
             
         except Exception as e:
             self.logger.error(f"❌ Erro no processamento: {str(e)}")

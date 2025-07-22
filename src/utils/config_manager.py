@@ -111,6 +111,14 @@ class ConfigManager:
             "threshold": self.get("fuzzy_matching.threshold", 85),
             "max_suggestions": self.get("fuzzy_matching.max_suggestions", 5)
         }
+    
+    def get_data_cleaning_config(self):
+        """Retorna configuração específica da limpeza de dados"""
+        return {
+            "null_organization_values": self.get("data_cleaning.null_organization_values", [
+                "Not applicable", "Not Applicable", "not applicable", "-", ".", "none", "None", "NONE", "N/A", "n/a", "NA", "na"
+            ])
+        }
 
 
 # Instância global do gerenciador de configuração

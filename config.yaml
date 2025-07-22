@@ -3,7 +3,7 @@
 # Data Processing
 data:
   excel_file: "data/raw/COP29_FLOP_On-site.xlsx"
-  excluded_sheets: ["temporary passes", "media"]
+  excluded_sheets: ["temporary passes", "media", "parties"]
   required_columns: ["Nominated by", "Name", "Home organization"]
 
 # Web Scraping
@@ -44,3 +44,20 @@ processing:
 fuzzy_matching:
   threshold: 85  # Similarity threshold (0-100)
   max_suggestions: 5  # Maximum number of similar names to consider
+
+# Data cleaning - values to be considered as null/empty and removed
+data_cleaning:
+  null_organization_values:
+    - "Not applicable"
+    - "Not Applicable" 
+    - "not applicable"
+    - "-"
+    - "."
+    - "none"
+    - "None"
+    - "NONE"
+    - "N/A"
+    - "n/a"
+    - "NA"
+    - "na"
+    - "|Na"

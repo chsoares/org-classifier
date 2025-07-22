@@ -8,9 +8,10 @@
 
 - [x] 2. Implement Excel data loading and processing
   - Create function to load COP29_FLOP_On-site.xlsx file
-  - Extract data from all spreadsheets except "temporary passes" and "media"
-  - Keep only "Nominated by", "Name", and "Home Organization" columns
+  - Extract data from all spreadsheets except "temporary passes", "media", "parties", and "party overflow" (government entities excluded as never insurance-related)
+  - Keep only "Nominated by", "Name", and "Home organization" columns
   - Add "Type" column with spreadsheet name for each row
+  - For "Party overflow" type: combine "Nominated by" + "Home organization" when country name not already included
   - Merge all spreadsheets into single DataFrame
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
@@ -35,7 +36,7 @@
   - Filter out social media and irrelevant sites
   - Record which search method was successful
   - Handle search failures and network errors gracefully
-  - **IMPORTANT**: For government organizations (especially from "Parties" and "Party overflow" types), combine "Nominated by" + "Home organization" for better search results (e.g., "Albania Ministry of Tourism and Environment" instead of just "Ministry of Tourism and Environment")
+  - **NOTE**: "Parties" and "Party overflow" tabs are excluded from processing as they represent government entities (never insurance-related)
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
 - [ ] 6. Adapt existing web scraping code for organization content
