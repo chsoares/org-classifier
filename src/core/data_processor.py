@@ -140,14 +140,44 @@ class DataProcessor:
         if dropped_count > 0:
             self.logger.debug(f"🗑️ Removidas {dropped_count} linhas com valores NA em '{sheet_name}'")
         
-        # 2. DEPOIS: Para Party overflow, adicionar Nominated by ao Home organization
+        # 2. DEPOIS: Para Party overflow, adicionar país apenas para organizações governamentais
         if sheet_name.lower() == "party overflow" and len(filtered_df) > 0:
-            self.logger.debug(f"🔄 Aplicando lógica para '{sheet_name}': adicionando país às organizações")
+            self.logger.debug(f"🔄 Aplicando lógica inteligente para '{sheet_name}': adicionando país apenas a organizações governamentais")
             
-            # SIMPLES: Nominated by + Home organization para todas as linhas
-            filtered_df['Home organization'] = filtered_df['Nominated by'] + " " + filtered_df['Home organization']
+            # Palavras-chave que indicam organizações governamentais
+            government_keywords = [
+                'embassy', 'government', 'parliament', 'ministry', 'department', 
+                'secretary', 'ministerio', 'ministre', 'ministère', 'ministério',
+                'secretariat', 'secretaria', 'council', 'conselho', 'cabinet',
+                'administration', 'administração', 'agency', 'agência', 'bureau',
+                'office', 'escritório', 'commission', 'comissão', 'authority',
+                'autoridade', 'directorate', 'diretoria', 'institute', 'instituto',
+                'service', 'serviço', 'central bank', 'banco central', 'treasury',
+                'tesouro', 'customs', 'alfândega', 'immigration', 'imigração'
+            ]
             
-            self.logger.debug(f"   Adicionado país a {len(filtered_df)} organizações")
+            combined_count = 0
+            for idx, row in filtered_df.iterrows():
+                nominated_by = str(row['Nominated by']).strip()
+                home_org = str(row['Home organization']).strip().lower()
+                
+                # Verificar se é organização governamental
+                is_government = any(keyword in home_org for keyword in government_keywords)
+                
+                if is_government:
+                    # Verificar se o país já não está no nome (flexível)
+                    country_words = nominated_by.lower().split()
+                    country_already_present = any(
+                        any(country_word in home_org for country_word in country_words if len(country_word) >= 4)
+                        for country_word in country_words
+                    )
+                    
+                    if not country_already_present:
+                        new_org = f"{nominated_by} {row['Home organization']}"
+                        filtered_df.at[idx, 'Home organization'] = new_org
+                        combined_count += 1
+            
+            self.logger.debug(f"   Adicionado país a {combined_count} organizações governamentais")
         
         self.logger.debug(f"✅ Extraídas {len(existing_cols)} colunas de '{sheet_name}' ({len(filtered_df)} linhas)")
         
