@@ -23,20 +23,19 @@
   - Count occurrences of each organization in the dataset
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
 
-- [ ] 4. Build organization tracking DataFrame
+- [x] 4. Build organization tracking DataFrame
   - Create DataFrame structure to track processing status for each organization
   - Include columns for website search, scraping, and classification results
   - Add error tracking and timestamp fields
   - Implement functions to update tracking status at each processing stage
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-- [ ] 5. Implement website search functionality
+- [x] 5. Implement website search functionality
   - Create web search function that tries Google first, then DuckDuckGo, then Bing
   - Parse search results to find organization's official website
   - Filter out social media and irrelevant sites
   - Record which search method was successful
   - Handle search failures and network errors gracefully
-  - **NOTE**: "Parties" and "Party overflow" tabs are excluded from processing as they represent government entities (never insurance-related)
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
 - [ ] 6. Adapt existing web scraping code for organization content
