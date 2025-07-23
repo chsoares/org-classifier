@@ -4,12 +4,10 @@
 """
 Web Searcher - Sistema de busca de websites de organizações
 
-Este módulo é responsável por:
-1. Buscar websites de organizações usando múltiplos motores de busca
-2. Tentar Google primeiro, depois DuckDuckGo, depois Bing
-3. Filtrar resultados irrelevantes (redes sociais, etc.)
-4. Validar URLs encontradas
-5. Implementar retry logic e tratamento de erros
+Este módulo implementa busca inteligente com:
+1. Wikipedia primeiro com validação de relevância
+2. Bing como fallback se Wikipedia não for relevante
+3. Validação de URLs encontradas
 """
 
 import requests
@@ -34,7 +32,7 @@ from utils.config_manager import config_manager
 
 class WebSearcher:
     """
-    Sistema de busca de websites de organizações
+    Sistema de busca de websites de organizações com Wikipedia + Bing
     """
     
     def __init__(self):
@@ -59,7 +57,7 @@ class WebSearcher:
             "Upgrade-Insecure-Requests": "1",
         }
         
-        # Sites irrelevantes para filtrar (removida Wikipedia - é boa fonte)
+        # Sites irrelevantes para filtrar
         self.irrelevant_domains = {
             'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'linkedin.com',
             'youtube.com', 'tiktok.com', 'pinterest.com', 'reddit.com',
@@ -72,7 +70,10 @@ class WebSearcher:
     
     def search_organization_website(self, org_name: str) -> Tuple[Optional[str], str]:
         """
-        Busca website de uma organização usando a estratégia do web_extractor
+        Busca website de uma organização com validação inteligente
+        1. Tenta Wikipedia primeiro com validação de relevância
+        2. Se Wikipedia não for relevante, usa Bing como fallback
+        3. Se Bing falhar, usa Wikipedia mesmo que irrelevante
         
         Args:
             org_name: Nome da organização
@@ -82,38 +83,49 @@ class WebSearcher:
         """
         self.logger.info(f"🔍 Buscando website para: {org_name}")
         
-        # 1. Tentar Wikipedia primeiro (sabemos que funciona)
+        # 1. Tentar Wikipedia primeiro
         try:
-            url = self.search_wikipedia(org_name)
-            if url:
-                self.logger.success(f"✨ Website encontrado via Wikipedia: {url}")
-                return url, "wikipedia"
+            wiki_url, wiki_title = self.search_wikipedia_with_validation(org_name)
+            if wiki_url and self._is_wikipedia_result_relevant(wiki_title, org_name):
+                self.logger.info(f"✨ Website encontrado via Wikipedia (relevante): {wiki_url}")
+                return wiki_url, "wikipedia"
+            elif wiki_url:
+                self.logger.warning(f"⚠️ Wikipedia encontrada mas irrelevante: {wiki_title} para {org_name}")
+                # Guardar para usar como fallback se necessário
+                fallback_wiki = (wiki_url, wiki_title)
         except Exception as e:
             self.logger.debug(f"Falha na busca Wikipedia: {str(e)}")
+            fallback_wiki = None
         
-        # 2. Usar estratégia do web_extractor (DuckDuckGo + Bing)
+        # 2. Fallback para Bing (única engine que funciona)
         try:
-            url = self.search_integrated(org_name)
+            url = self.search_bing_working(org_name)
             if url:
-                self.logger.success(f"✨ Website encontrado via busca integrada: {url}")
-                return url, "integrated"
+                self.logger.info(f"✨ Website encontrado via Bing: {url}")
+                return url, "bing"
         except Exception as e:
-            self.logger.warning(f"⚠️ Falha na busca integrada: {str(e)}")
+            self.logger.warning(f"⚠️ Falha na busca Bing: {str(e)}")
+        
+        # 3. Se Bing falhar, usar Wikipedia mesmo que irrelevante (melhor que nada)
+        if 'fallback_wiki' in locals() and fallback_wiki:
+            wiki_url, wiki_title = fallback_wiki
+            self.logger.warning(f"⚠️ Usando Wikipedia irrelevante como último recurso: {wiki_url}")
+            return wiki_url, "wikipedia_fallback"
         
         self.logger.error(f"❌ Nenhum website encontrado para: {org_name}")
         return None, "failed"
     
-    def search_wikipedia(self, org_name: str) -> Optional[str]:
+    def search_wikipedia_with_validation(self, org_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Busca na Wikipedia usando API
+        Busca na Wikipedia e retorna URL + título para validação
         
         Args:
             org_name: Nome da organização
             
         Returns:
-            URL da Wikipedia encontrada ou None
+            Tuple com (URL, título) ou (None, None)
         """
-        self.logger.debug(f"🔍 Buscando na Wikipedia: {org_name}")
+        self.logger.debug(f"📚 Buscando na Wikipedia: {org_name}")
         
         try:
             # Usar API da Wikipedia
@@ -123,7 +135,7 @@ class WebSearcher:
                 'format': 'json',
                 'list': 'search',
                 'srsearch': org_name,
-                'srlimit': 3
+                'srlimit': 1  # Apenas primeiro resultado
             }
             
             response = requests.get(
@@ -139,24 +151,83 @@ class WebSearcher:
                 search_results = data.get('query', {}).get('search', [])
                 
                 if search_results:
-                    # Pegar o primeiro resultado
                     first_result = search_results[0]
                     title = first_result.get('title', '')
                     page_url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
                     
-                    self.logger.debug(f"Wikipedia encontrada: {page_url}")
-                    return page_url
+                    self.logger.debug(f"Wikipedia encontrada: {title} -> {page_url}")
+                    return page_url, title
             
-            return None
+            return None, None
             
         except Exception as e:
             self.logger.debug(f"Erro na busca Wikipedia: {str(e)}")
-            return None
+            return None, None
     
-    def search_integrated(self, org_name: str) -> Optional[str]:
+    def _is_wikipedia_result_relevant(self, wiki_title: str, org_name: str) -> bool:
         """
-        Busca integrada usando a estratégia do web_extractor
-        Tenta DuckDuckGo primeiro, depois Bing
+        Valida se o resultado da Wikipedia é relevante para a organização
+        Verifica se palavras-chave da organização aparecem no título
+        
+        Args:
+            wiki_title: Título da página da Wikipedia
+            org_name: Nome da organização
+            
+        Returns:
+            True se o resultado é relevante
+        """
+        if not wiki_title or not org_name:
+            return False
+        
+        # Normalizar strings
+        title_lower = wiki_title.lower()
+        org_lower = org_name.lower()
+        
+        # Extrair palavras significativas da organização (> 2 caracteres)
+        org_words = [word for word in org_lower.split() if len(word) > 2]
+        
+        # Remover palavras comuns que não são distintivas
+        common_words = {
+            'ltd', 'inc', 'corp', 'corporation', 'company', 'group', 'limited', 
+            'co', 'llc', 'se', 'sa', 'ag', 'gmbh', 'bv', 'nv', 'spa', 'srl', 
+            'the', 'and', 'of', 'for', 'in', 'on', 'at', 'to', 'by', 'with'
+        }
+        distinctive_words = [word for word in org_words if word not in common_words]
+        
+        # Se não há palavras distintivas, usar todas as palavras > 2 chars
+        words_to_check = distinctive_words if distinctive_words else org_words
+        
+        if not words_to_check:
+            return False
+        
+        # Contar quantas palavras aparecem no título
+        matches = 0
+        for word in words_to_check:
+            if word in title_lower:
+                matches += 1
+        
+        # Calcular score de relevância
+        relevance_score = matches / len(words_to_check)
+        
+        # Log para debug
+        self.logger.debug(f"Relevância Wikipedia: '{wiki_title}' para '{org_name}'")
+        self.logger.debug(f"  Palavras para verificar: {words_to_check}")
+        self.logger.debug(f"  Matches: {matches}/{len(words_to_check)} = {relevance_score:.2f}")
+        
+        # Considerar relevante se pelo menos 50% das palavras coincidem
+        # OU se é uma correspondência exata de palavra única
+        is_relevant = relevance_score >= 0.5 or (len(words_to_check) == 1 and matches == 1)
+        
+        if is_relevant:
+            self.logger.debug(f"  ✅ Relevante (score: {relevance_score:.2f})")
+        else:
+            self.logger.debug(f"  ❌ Irrelevante (score: {relevance_score:.2f})")
+        
+        return is_relevant
+    
+    def search_bing_working(self, org_name: str) -> Optional[str]:
+        """
+        Busca no Bing usando seletores que funcionam
         
         Args:
             org_name: Nome da organização
@@ -164,400 +235,54 @@ class WebSearcher:
         Returns:
             URL encontrada ou None
         """
-        self.logger.debug(f"🔍 Busca integrada para: {org_name}")
+        self.logger.debug(f"🅱️ Buscando no Bing: {org_name}")
         
-        # Preparar query de busca
-        search_query = f'"{org_name}"'
+        query = f'"{org_name}"'
+        search_url = f"https://www.bing.com/search?q={requests.utils.quote(query)}&count=10"
         
-        # Headers específicos como no web_extractor
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-        }
-        
-        # 1. Tentar DuckDuckGo primeiro
         try:
-            search_url = f"https://duckduckgo.com/html/?q={requests.utils.quote(search_query)}"
-            
             response = requests.get(
-                search_url, 
-                headers=headers, 
-                timeout=self.timeout, 
-                verify=False
-            )
-            
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                
-                # Usar seletor específico do web_extractor
-                for result in soup.select(".result__url"):
-                    href = result.get("href", "")
-                    if href:
-                        # Decodificar URL se necessário
-                        if href.startswith("/"):
-                            href = f"https:{href}"
-                        
-                        # Verificar se é uma URL válida (filtros do web_extractor)
-                        if not any(
-                            x in href.lower()
-                            for x in [
-                                "google.com", "youtube.com", "facebook.com", 
-                                "instagram.com", "twitter.com", "wikipedia.org",
-                                "webcache", "duckduckgo.com", "bing.com", "yahoo.com",
-                            ]
-                        ):
-                            # Validar se a URL responde
-                            if self._validate_url_response(href, headers):
-                                self.logger.debug(f"URL válida encontrada via DuckDuckGo: {href}")
-                                return href
-        
-        except Exception as e:
-            self.logger.debug(f"Erro no DuckDuckGo integrado: {str(e)}")
-        
-        # 2. Fallback para Bing
-        try:
-            bing_url = f"https://www.bing.com/search?q={requests.utils.quote(search_query)}"
-            response = requests.get(
-                bing_url, 
-                headers=headers, 
-                timeout=self.timeout, 
-                verify=False
-            )
-            
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                
-                # Usar seletor específico do web_extractor
-                for result in soup.select("li.b_algo h2 a"):
-                    href = result.get("href", "")
-                    if (
-                        href
-                        and href.startswith("http")
-                        and not any(
-                            x in href.lower()
-                            for x in [
-                                "google.com", "youtube.com", "facebook.com",
-                                "instagram.com", "twitter.com", "wikipedia.org",
-                                "webcache", "duckduckgo.com", "bing.com", "yahoo.com",
-                            ]
-                        )
-                    ):
-                        # Validar se a URL responde
-                        if self._validate_url_response(href, headers):
-                            self.logger.debug(f"URL válida encontrada via Bing: {href}")
-                            return href
-        
-        except Exception as e:
-            self.logger.debug(f"Erro no Bing integrado: {str(e)}")
-        
-        return None
-    
-    def _validate_url_response(self, url: str, headers: dict) -> bool:
-        """
-        Valida se uma URL responde (como no web_extractor)
-        
-        Args:
-            url: URL para validar
-            headers: Headers para usar na requisição
-            
-        Returns:
-            True se a URL responde
-        """
-        try:
-            response = requests.head(
-                url,
-                headers=headers,
+                search_url,
+                headers=self.headers,
                 timeout=self.timeout,
                 verify=False,
-                allow_redirects=True,
+                allow_redirects=True
             )
-            return response.status_code == 200
-        except Exception:
-            return False
-    
-    def search_google(self, org_name: str) -> Optional[str]:
-        """
-        Busca no Google com tratamento de rate limiting
-        
-        Args:
-            org_name: Nome da organização
             
-        Returns:
-            URL encontrada ou None
-        """
-        self.logger.debug(f"🔍 Buscando no Google: {org_name}")
-        
-        # Headers mais variados para evitar detecção
-        google_headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,pt;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0"
-        }
-        
-        # Usar busca simples
-        query = f'"{org_name}"'
-        search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}&num=10&hl=en"
-        
-        # Tentar com retry para rate limiting
-        for attempt in range(3):
-            try:
-                # Delay progressivo para evitar rate limiting
-                if attempt > 0:
-                    delay = 2 ** attempt  # 2s, 4s, 8s
-                    self.logger.debug(f"Aguardando {delay}s antes da tentativa {attempt + 1}")
-                    time.sleep(delay)
-                
-                response = requests.get(
-                    search_url,
-                    headers=google_headers,
-                    timeout=self.timeout,
-                    verify=False,
-                    allow_redirects=True
-                )
-                
-                if response.status_code == 429:
-                    self.logger.debug(f"Rate limited (429) na tentativa {attempt + 1}")
-                    continue
-                elif response.status_code != 200:
-                    self.logger.debug(f"Google retornou status {response.status_code}")
-                    continue
-                
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Debug: verificar se encontrou algum link
-                all_links = soup.find_all('a', href=True)
-                http_links = [link for link in all_links if link.get('href', '').startswith('http')]
-                self.logger.debug(f"Total de links HTTP encontrados: {len(http_links)}")
-                
-                # Seletores mais simples e abrangentes
-                selectors = [
-                    'a[href^="http"]',  # Qualquer link HTTP
-                    'div.g a',          # Links em resultados
-                    'h3 a',             # Links em títulos
-                ]
-                
-                found_urls = []
-                
-                for selector in selectors:
-                    links = soup.select(selector)
-                    self.logger.debug(f"Seletor '{selector}' encontrou {len(links)} links")
-                    
-                    for link in links[:10]:  # Mais resultados
-                        href = link.get('href', '')
-                        if not href or not href.startswith('http'):
-                            continue
-                        
-                        # Limpar URLs do Google
-                        if '/url?q=' in href:
-                            try:
-                                from urllib.parse import parse_qs, urlparse
-                                parsed = urlparse(href)
-                                if parsed.query:
-                                    query_params = parse_qs(parsed.query)
-                                    if 'q' in query_params:
-                                        href = query_params['q'][0]
-                            except:
-                                continue
-                        
-                        if href not in found_urls:
-                            found_urls.append(href)
-                            self.logger.debug(f"Testando URL: {href}")
-                            
-                            if self._is_valid_result(href, org_name):
-                                self.logger.debug(f"URL válida encontrada: {href}")
-                                return href
-                
-                self.logger.debug(f"Nenhuma URL válida encontrada entre {len(found_urls)} URLs testadas")
-                return None
-                
-            except Exception as e:
-                self.logger.debug(f"Erro na busca Google (tentativa {attempt + 1}): {str(e)}")
-                continue
-        
-        self.logger.debug("Todas as tentativas do Google falharam")
-        return None
-    
-
-    
-    def search_duckduckgo(self, org_name: str) -> Optional[str]:
-        """
-        Busca no DuckDuckGo com melhor parsing
-        
-        Args:
-            org_name: Nome da organização
-            
-        Returns:
-            URL encontrada ou None
-        """
-        self.logger.debug(f"🔍 Buscando no DuckDuckGo: {org_name}")
-        
-        # Preparar query de busca
-        query = f'"{org_name}"'
-        search_url = f"https://duckduckgo.com/html/?q={requests.utils.quote(query)}&kl=us-en"
-        
-        try:
-            response = self._make_request(search_url)
-            if not response:
+            if response.status_code != 200:
+                self.logger.debug(f"Bing retornou status {response.status_code}")
                 return None
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Múltiplos seletores para DuckDuckGo
-            selectors = [
-                '.result__url',           # Seletor principal
-                '.result__a',             # Alternativo
-                'a.result__a[href]'       # Mais específico
+            # Usar seletores que funcionaram no debug
+            working_selectors = [
+                'li.b_algo h2 a',  # Seletor principal
+                '.b_algo a',       # Alternativo
+                'h2 a'             # Mais geral
             ]
             
-            for selector in selectors:
+            for selector in working_selectors:
                 results = soup.select(selector)
-                for result in results[:5]:  # Apenas primeiros 5
+                self.logger.debug(f"Seletor '{selector}': {len(results)} resultados")
+                
+                for result in results[:5]:  # Primeiros 5 resultados
                     href = result.get('href', '')
-                    if not href:
-                        continue
                     
-                    # Limpar URLs de redirecionamento do DuckDuckGo
-                    if href.startswith('/l/?uddg='):
-                        continue
-                    
-                    # Normalizar URL
-                    if not href.startswith('http'):
-                        if href.startswith('//'):
-                            href = f"https:{href}"
-                        elif href.startswith('/'):
-                            continue  # Skip relative URLs
-                        else:
-                            href = f"https://{href}"
-                    
-                    if self._is_valid_result(href, org_name):
+                    if href and href.startswith('http') and self._is_valid_result(href, org_name):
+                        self.logger.debug(f"URL válida encontrada: {href}")
                         return href
             
+            self.logger.debug("Nenhuma URL válida encontrada no Bing")
             return None
             
         except Exception as e:
-            self.logger.debug(f"Erro na busca DuckDuckGo: {str(e)}")
+            self.logger.debug(f"Erro na busca Bing: {str(e)}")
             return None
-    
-    def search_searx(self, org_name: str) -> Optional[str]:
-        """
-        Busca usando Searx (motor de busca open source)
-        
-        Args:
-            org_name: Nome da organização
-            
-        Returns:
-            URL encontrada ou None
-        """
-        self.logger.debug(f"🔍 Buscando no Searx: {org_name}")
-        
-        # Instâncias públicas do Searx
-        searx_instances = [
-            "https://searx.be",
-            "https://search.sapti.me",
-            "https://searx.info",
-        ]
-        
-        query = f'"{org_name}"'
-        
-        for instance in searx_instances:
-            try:
-                search_url = f"{instance}/search?q={requests.utils.quote(query)}&format=json"
-                
-                response = requests.get(
-                    search_url,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    verify=False
-                )
-                
-                if response.status_code != 200:
-                    continue
-                
-                data = response.json()
-                results = data.get('results', [])
-                
-                for result in results[:5]:
-                    url = result.get('url', '')
-                    if url and self._is_valid_result(url, org_name):
-                        return url
-                        
-            except Exception as e:
-                self.logger.debug(f"Erro na instância Searx {instance}: {str(e)}")
-                continue
-        
-        return None
-    
-
-    
-    def _make_request(self, url: str) -> Optional[requests.Response]:
-        """
-        Faz requisição HTTP com retry logic
-        
-        Args:
-            url: URL para requisição
-            
-        Returns:
-            Response object ou None
-        """
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = requests.get(
-                    url,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    verify=False,
-                    allow_redirects=True
-                )
-                
-                if response.status_code == 200:
-                    return response
-                elif response.status_code == 429:  # Rate limited
-                    if attempt < self.max_retries:
-                        wait_time = self.retry_delay * (2 ** attempt)
-                        self.logger.debug(f"Rate limited, aguardando {wait_time}s...")
-                        time.sleep(wait_time)
-                        continue
-                else:
-                    self.logger.debug(f"Status code {response.status_code} para {url}")
-                    return None
-                    
-            except requests.exceptions.Timeout:
-                if attempt < self.max_retries:
-                    self.logger.debug(f"Timeout na tentativa {attempt + 1}, tentando novamente...")
-                    time.sleep(self.retry_delay)
-                    continue
-                else:
-                    self.logger.debug(f"Timeout final para {url}")
-                    return None
-                    
-            except Exception as e:
-                if attempt < self.max_retries:
-                    self.logger.debug(f"Erro na tentativa {attempt + 1}: {str(e)}")
-                    time.sleep(self.retry_delay)
-                    continue
-                else:
-                    self.logger.debug(f"Erro final para {url}: {str(e)}")
-                    return None
-        
-        return None
     
     def _is_valid_result(self, url: str, org_name: str) -> bool:
         """
-        Valida se um resultado de busca é relevante com lógica mais permissiva
+        Valida se um resultado de busca é relevante
         
         Args:
             url: URL do resultado
@@ -572,13 +297,13 @@ class WebSearcher:
             domain = parsed.netloc.lower()
             full_url = url.lower()
             
-            self.logger.debug(f"Validando URL: {url} para organização: {org_name}")
+            self.logger.debug(f"Validando URL: {url}")
             
             # Remover www.
             if domain.startswith('www.'):
                 domain = domain[4:]
             
-            # Filtrar domínios irrelevantes (mais restritivo)
+            # Filtrar domínios irrelevantes
             if any(irrelevant in domain for irrelevant in self.irrelevant_domains):
                 self.logger.debug(f"URL rejeitada - domínio irrelevante: {domain}")
                 return False
@@ -594,7 +319,7 @@ class WebSearcher:
                 self.logger.debug(f"URL rejeitada - subdomínio suspeito: {domain}")
                 return False
             
-            # Filtrar URLs que claramente não são sites oficiais (mais permissivo)
+            # Filtrar URLs que claramente não são sites oficiais
             bad_patterns = [
                 '/search?', '/q=', '/query=', '/results?'
             ]
@@ -603,8 +328,7 @@ class WebSearcher:
                 self.logger.debug(f"URL rejeitada - padrão suspeito na URL: {full_url}")
                 return False
             
-            # Validação mais permissiva - aceitar mais URLs
-            # Primeiro, verificar se a URL responde
+            # Validar se a URL responde
             if not self.validate_website_url(url):
                 self.logger.debug(f"URL rejeitada - não responde: {url}")
                 return False
