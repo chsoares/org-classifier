@@ -44,3 +44,22 @@ A classificação precisa ser apenas "Yes" ou "No" e acontecer somente se todo o
 
 Ao fim de tudo, adicionamos a coluna de is_Insurance na tabela de nomes, que é o resultado final.
 
+
+===================
+Notei que fizemos o pipeline de search -> scrape -> classify antes do caching, então suponho que o processo que usaria o cache não tem o cache implementado... Precisamos verificar isso também.
+
+O processo, relembrando, precisa ser:
+
+1. Carrega o arquivo especificado no config.yaml (data/cop29.xlsx)
+
+2. Faz o merge dos dados úteis num csv próprio (processed/merged_data.csv)
+
+3. Normaliza os dados (processed/merged_data_normalized.csv)
+
+4. Cria a tabela de organizações únicas para o tracking da classificação a partir dos dados normalizados (results/organizations.csv)
+
+5. Websearch -> extração -> classificação de cada item da tabela de organizações, USANDO O CACHE! (atualiza results/organizations.csv)
+
+6. Adição de coluna is_insurance na tabela de pessoas de acordo com a home organization e a classificação registrada na tabela de organizações (results/people.csv)
+
+7. Visualização dos resultados no streamlit a partir de people.csv e organizations.csv (esse ainda não começamos)

@@ -1,0 +1,21 @@
+Type,Nominated by,Name,Home organization,Home organization_normalized,is_insurance
+Party overflow,Germany,Hans Mueller,Allianz SE,Allianz SE,True
+Party overflow,Switzerland,Anna Schmidt,Swiss Re,Swiss Re,True
+Party overflow,USA,John Smith,Microsoft Corporation,Microsoft Corporation,False
+Party overflow,UK,Mary Johnson,Lloyd's of London,Lloyd's of London,True
+Party overflow,France,Pierre Dubois,AXA Group,AXA Group,True
+Party overflow,Germany,Klaus Weber,Munich Re,Munich Re,True
+Party overflow,USA,Sarah Wilson,Harvard University,Harvard University,False
+Party overflow,Switzerland,Peter Meier,Zurich Insurance Group,Zurich Insurance Group,True
+Party overflow,UK,Emma Brown,University of Oxford,University of Oxford,False
+Party overflow,Netherlands,Jan de Vries,ING Group,ING Group,True
+Party overflow,USA,Michael Davis,Google LLC,Google LLC,False
+Party overflow,Germany,Thomas Fischer,Hannover Re,Hannover Re,True
+Party overflow,UK,Sophie Taylor,Cambridge University,Cambridge University,False
+Party overflow,Switzerland,Marco Rossi,Chubb Limited,Chubb Limited,True
+Party overflow,France,Jean Martin,Sorbonne University,Sorbonne University,False
+Party overflow,USA,David Miller,Apple Inc,Apple Inc,False
+Party overflow,Germany,Andreas Bauer,ERGO Group,ERGO Group,True
+Party overflow,UK,Helen Clark,Imperial College London,Imperial College London,False
+Party overflow,Switzerland,Stefan Huber,Baloise Group,Baloise Group,True
+Party overflow,Netherlands,Lisa van Berg,Radboud University,Radboud University,False

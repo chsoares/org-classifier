@@ -164,62 +164,64 @@ class ResultMerger:
             self.logger.error(f"❌ Erro ao carregar resultados de classificação: {str(e)}")
             return {}
     
-    def merge_results(self, processed_df: pd.DataFrame, 
-                     classification_results: Dict[str, Dict[str, Any]],
-                     org_column: str = 'Home organization') -> pd.DataFrame:
+    def create_people_dataset(self, processed_df: pd.DataFrame, 
+                             organizations_df: pd.DataFrame,
+                             org_column: str = 'Home organization') -> pd.DataFrame:
         """
-        Faz merge dos resultados de classificação com dataset processado e normalizado
+        Cria dataset final de pessoas com APENAS coluna is_insurance adicionada
         
         Args:
             processed_df: DataFrame processado e normalizado (merged_data_normalized.csv)
-            classification_results: Resultados de classificação
-            org_column: Nome da coluna com organizações (deve ser 'Home organization')
+            organizations_df: DataFrame de organizações com classificações (results/organizations.csv)
+            org_column: Nome da coluna com organizações
             
         Returns:
-            DataFrame com resultados merged
+            DataFrame final para results/people.csv
         """
-        self.logger.info("🔗 Fazendo merge dos resultados com dataset processado")
+        self.logger.info("👥 Criando dataset final de pessoas")
         
         try:
             # Criar cópia do DataFrame processado
-            merged_df = processed_df.copy()
+            people_df = processed_df.copy()
             
             # Simplificar colunas de organização se necessário
-            if 'Home organization_normalized' in merged_df.columns and 'Home organization' in merged_df.columns:
+            if 'Home organization_normalized' in people_df.columns and 'Home organization' in people_df.columns:
                 # Substituir coluna original pela normalizada
-                merged_df['Home organization'] = merged_df['Home organization_normalized']
-                merged_df.drop('Home organization_normalized', axis=1, inplace=True)
+                people_df['Home organization'] = people_df['Home organization_normalized']
+                people_df.drop('Home organization_normalized', axis=1, inplace=True)
                 self.logger.info("✅ Coluna 'Home organization' atualizada com valores normalizados")
             
             # Verificar se coluna de organização existe
-            if org_column not in merged_df.columns:
-                available_cols = [col for col in merged_df.columns if 'organization' in col.lower()]
+            if org_column not in people_df.columns:
+                available_cols = [col for col in people_df.columns if 'organization' in col.lower()]
                 if available_cols:
                     org_column = available_cols[0]
                     self.logger.warning(f"⚠️ Coluna '{org_column}' não encontrada, usando '{org_column}'")
                 else:
-                    raise ValueError(f"Coluna de organização não encontrada. Colunas disponíveis: {list(merged_df.columns)}")
+                    raise ValueError(f"Coluna de organização não encontrada. Colunas disponíveis: {list(people_df.columns)}")
             
-            # Inicializar novas colunas
-            merged_df['is_insurance'] = None
-            merged_df['insurance_classification_success'] = False
-            merged_df['website_url'] = None
-            merged_df['content_source'] = None
-            merged_df['search_method'] = None
-            merged_df['processing_time_seconds'] = None
-            merged_df['classification_error'] = None
+            # Inicializar APENAS coluna is_insurance (conforme processo definido)
+            people_df['is_insurance'] = None
+            
+            # Criar dicionário de lookup das organizações
+            org_lookup = {}
+            for _, org_row in organizations_df.iterrows():
+                org_name = org_row.get('organization_name', '')
+                if org_name:
+                    org_lookup[org_name] = org_row.get('is_insurance', None)
             
             # Estatísticas
-            total_rows = len(merged_df)
-            unique_orgs = merged_df[org_column].nunique()
-            matched_orgs = 0
-            insurance_count = 0
-            non_insurance_count = 0
+            total_rows = len(people_df)
+            unique_orgs = people_df[org_column].nunique()
+            matched_count = 0
+            insurance_people = 0
+            non_insurance_people = 0
             
-            self.logger.info(f"📊 Dataset processado: {total_rows} participantes, {unique_orgs} organizações únicas")
+            self.logger.info(f"📊 Dataset de pessoas: {total_rows} participantes, {unique_orgs} organizações únicas")
+            self.logger.info(f"📋 Organizações classificadas disponíveis: {len(org_lookup)}")
             
-            # Fazer matching linha por linha
-            for idx, row in merged_df.iterrows():
+            # Fazer matching linha por linha - APENAS is_insurance
+            for idx, row in people_df.iterrows():
                 org_name = row[org_column]
                 
                 if pd.isna(org_name) or not org_name:
@@ -228,50 +230,37 @@ class ResultMerger:
                 # Limpar nome da organização
                 org_name_clean = str(org_name).strip()
                 
-                # Procurar resultado de classificação
-                if org_name_clean in classification_results:
-                    result = classification_results[org_name_clean]
+                # Procurar classificação na tabela de organizações
+                if org_name_clean in org_lookup:
+                    is_insurance = org_lookup[org_name_clean]
+                    people_df.at[idx, 'is_insurance'] = is_insurance
+                    matched_count += 1
                     
-                    merged_df.at[idx, 'insurance_classification_success'] = result['success']
-                    
-                    if result['success']:
-                        merged_df.at[idx, 'is_insurance'] = result['is_insurance']
-                        merged_df.at[idx, 'website_url'] = result['website_url']
-                        merged_df.at[idx, 'content_source'] = result['content_source_type']
-                        merged_df.at[idx, 'search_method'] = result['search_method']
-                        merged_df.at[idx, 'processing_time_seconds'] = result['processing_time']
-                        
-                        if result['is_insurance'] is True:
-                            insurance_count += 1
-                        elif result['is_insurance'] is False:
-                            non_insurance_count += 1
-                        
-                        matched_orgs += 1
-                    else:
-                        merged_df.at[idx, 'classification_error'] = result.get('error', 'Unknown error')
+                    if is_insurance is True:
+                        insurance_people += 1
+                    elif is_insurance is False:
+                        non_insurance_people += 1
             
             # Calcular estatísticas finais
-            classification_rate = (matched_orgs / unique_orgs * 100) if unique_orgs > 0 else 0
+            classification_rate = (matched_count / total_rows * 100) if total_rows > 0 else 0
             
             self.merge_stats = {
                 'total_participants': total_rows,
-                'total_organizations': unique_orgs,
-                'organizations_classified': matched_orgs,
-                'organizations_not_classified': unique_orgs - matched_orgs,
-                'insurance_organizations': insurance_count,
-                'non_insurance_organizations': non_insurance_count,
+                'participants_with_classification': matched_count,
+                'participants_without_classification': total_rows - matched_count,
+                'insurance_participants': insurance_people,
+                'non_insurance_participants': non_insurance_people,
                 'classification_rate': classification_rate
             }
             
-            self.logger.info("✅ Merge concluído com sucesso!")
-            self.logger.info(f"📊 Estatísticas do merge:")
+            self.logger.info("✅ Dataset de pessoas criado com sucesso!")
+            self.logger.info(f"📊 Estatísticas:")
             self.logger.info(f"   • Total de participantes: {total_rows}")
-            self.logger.info(f"   • Organizações únicas: {unique_orgs}")
-            self.logger.info(f"   • Organizações classificadas: {matched_orgs} ({classification_rate:.1f}%)")
-            self.logger.info(f"   • Seguradoras identificadas: {insurance_count}")
-            self.logger.info(f"   • Não-seguradoras identificadas: {non_insurance_count}")
+            self.logger.info(f"   • Participantes classificados: {matched_count} ({classification_rate:.1f}%)")
+            self.logger.info(f"   • Participantes de seguradoras: {insurance_people}")
+            self.logger.info(f"   • Participantes de não-seguradoras: {non_insurance_people}")
             
-            return merged_df
+            return people_df
             
         except Exception as e:
             self.logger.error(f"❌ Erro no merge: {str(e)}")

@@ -1,0 +1,21 @@
+organization_name,participant_count,is_insurance,website_url,search_method,content_source,processing_status,error_message,processed_at
+Allianz SE,1,True,https://en.wikipedia.org/wiki/Allianz,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.742609
+Swiss Re,1,True,https://en.wikipedia.org/wiki/Swiss_Re,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.743576
+Microsoft Corporation,1,False,https://en.wikipedia.org/wiki/Microsoft,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.744971
+Lloyd's of London,1,True,https://en.wikipedia.org/wiki/Lloyd's_of_London,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.746031
+AXA Group,1,True,https://en.wikipedia.org/wiki/Axa,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.747115
+Munich Re,1,True,https://en.wikipedia.org/wiki/Munich_Re,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.748606
+Harvard University,1,False,https://en.wikipedia.org/wiki/Harvard_University,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.750004
+Zurich Insurance Group,1,True,https://en.wikipedia.org/wiki/Zurich_Insurance_Group,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.751320
+University of Oxford,1,False,https://en.wikipedia.org/wiki/University_of_Oxford,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.752575
+ING Group,1,True,https://en.wikipedia.org/wiki/ING_Group,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.753743
+Google LLC,1,False,https://en.wikipedia.org/wiki/Google,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.756089
+Hannover Re,1,True,https://en.wikipedia.org/wiki/Hannover_Re,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.757568
+Cambridge University,1,False,https://en.wikipedia.org/wiki/University_of_Cambridge,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.759006
+Chubb Limited,1,True,https://en.wikipedia.org/wiki/Chubb_Limited,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.759998
+Sorbonne University,1,False,https://en.wikipedia.org/wiki/Sorbonne_University,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.761258
+Apple Inc,1,False,https://en.wikipedia.org/wiki/Apple_Inc.,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.762575
+ERGO Group,1,True,https://en.wikipedia.org/wiki/Ergo_Group,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.763656
+Imperial College London,1,False,https://en.wikipedia.org/wiki/Imperial_College_London,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.764917
+Baloise Group,1,True,https://www.baloise-life.com/lux/pt/pt/nossa-empresa/grupo-baloise.html,bing,website,completed,,2025-07-23T16:29:44.766404
+Radboud University,1,False,https://en.wikipedia.org/wiki/Radboud_University_Nijmegen,wikipedia,wikipedia,completed,,2025-07-23T16:29:44.767748
