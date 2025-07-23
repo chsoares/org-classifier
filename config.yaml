@@ -2,7 +2,7 @@
 
 # Data Processing
 data:
-  excel_file: "data/raw/cop29_test.xlsx"
+  excel_file: "data/raw/COP29_FLOP_On-site.xlsx"
   excluded_sheets: ["temporary passes", "media", "parties"]
   required_columns: ["Nominated by", "Name", "Home organization"]
 
