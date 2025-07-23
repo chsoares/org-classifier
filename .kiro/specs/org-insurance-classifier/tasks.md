@@ -38,7 +38,7 @@
   - Handle search failures and network errors gracefully
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-- [ ] 6. Adapt existing web scraping code for organization content
+- [x] 6. Adapt existing web scraping code for organization content
   - Modify refs/classifier/web_extractor.py for organization-specific content
   - Extract main page content and "About" sections
   - Clean and normalize extracted text
