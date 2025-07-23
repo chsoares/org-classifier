@@ -31,6 +31,7 @@ from utils.config_manager import config_manager
 from scraping.web_searcher import WebSearcher
 from scraping.org_web_extractor import OrganizationWebExtractor
 from classification.insurance_classifier import InsuranceClassifier
+from core.cache_manager import CacheManager
 
 
 class MainProcessor:
@@ -54,6 +55,7 @@ class MainProcessor:
         self.web_searcher = WebSearcher()
         self.web_extractor = OrganizationWebExtractor()
         self.classifier = InsuranceClassifier()
+        self.cache_manager = CacheManager()
         
         # Estatísticas do processamento
         self.stats = {
@@ -111,12 +113,40 @@ class MainProcessor:
         
         self.logger.info(f"🔍 Processando organização: {org_name}")
         
+        # Verificar se já temos resultado completo no cache
+        cached_result = self.cache_manager.load_from_cache('full_results', org_name)
+        if cached_result:
+            self.logger.info(f"📦 Resultado encontrado no cache para {org_name}")
+            # Atualizar timestamps e estatísticas
+            cached_result['processing_start'] = start_time
+            cached_result['processing_end'] = datetime.now()
+            cached_result['total_time_seconds'] = 0.1  # Tempo mínimo para cache
+            self.stats['total_processed'] += 1
+            if cached_result.get('success'):
+                self.stats['successful_classifications'] += 1
+            return cached_result
+        
         try:
             # ETAPA 1: BUSCAR WEBSITE
             self.logger.debug(f"Etapa 1: Buscando website para {org_name}")
             stage_start = datetime.now()
             
-            website_url, search_method = self.web_searcher.search_organization_website(org_name)
+            # Verificar cache de busca
+            cached_search = self.cache_manager.load_from_cache('web_search', org_name)
+            if cached_search:
+                website_url = cached_search.get('website_url')
+                search_method = cached_search.get('search_method')
+                self.logger.debug(f"📦 Busca carregada do cache: {website_url}")
+            else:
+                website_url, search_method = self.web_searcher.search_organization_website(org_name)
+                
+                # Salvar no cache se encontrou
+                if website_url:
+                    search_cache_data = {
+                        'website_url': website_url,
+                        'search_method': search_method
+                    }
+                    self.cache_manager.save_to_cache('web_search', org_name, search_cache_data)
             
             stage_time = (datetime.now() - stage_start).total_seconds()
             result['stages']['web_search']['time_seconds'] = stage_time
@@ -143,7 +173,17 @@ class MainProcessor:
             self.logger.debug(f"Etapa 2: Extraindo conteúdo de {website_url}")
             stage_start = datetime.now()
             
-            content_data = self.web_extractor.extract_organization_content(website_url, org_name)
+            # Verificar cache de extração
+            cached_content = self.cache_manager.load_from_cache('content_extraction', org_name)
+            if cached_content:
+                content_data = cached_content
+                self.logger.debug(f"📦 Conteúdo carregado do cache")
+            else:
+                content_data = self.web_extractor.extract_organization_content(website_url, org_name)
+                
+                # Salvar no cache se extraiu
+                if content_data:
+                    self.cache_manager.save_to_cache('content_extraction', org_name, content_data)
             
             stage_time = (datetime.now() - stage_start).total_seconds()
             result['stages']['content_extraction']['time_seconds'] = stage_time
@@ -179,7 +219,20 @@ class MainProcessor:
             self.logger.debug(f"Etapa 3: Classificando {org_name} com IA")
             stage_start = datetime.now()
             
-            is_insurance = self.classifier.classify_organization(content_text, org_name)
+            # Verificar cache de classificação
+            cached_classification = self.cache_manager.load_from_cache('classification', org_name)
+            if cached_classification:
+                is_insurance = cached_classification.get('is_insurance')
+                self.logger.debug(f"📦 Classificação carregada do cache: {is_insurance}")
+            else:
+                is_insurance = self.classifier.classify_organization(content_text, org_name)
+                
+                # Salvar no cache
+                classification_cache_data = {
+                    'is_insurance': is_insurance,
+                    'content_preview': content_text[:200] + "..." if len(content_text) > 200 else content_text
+                }
+                self.cache_manager.save_to_cache('classification', org_name, classification_cache_data)
             
             stage_time = (datetime.now() - stage_start).total_seconds()
             result['stages']['classification']['time_seconds'] = stage_time
@@ -220,7 +273,13 @@ class MainProcessor:
                 'timestamp': datetime.now()
             })
         
-        return self._finalize_result(result)
+        final_result = self._finalize_result(result)
+        
+        # Salvar resultado completo no cache (apenas se foi processado, não carregado do cache)
+        if 'cached_result' not in locals() or not cached_result:
+            self.cache_manager.save_to_cache('full_results', org_name, final_result)
+        
+        return final_result
     
     def _finalize_result(self, result: Dict) -> Dict:
         """
@@ -344,6 +403,40 @@ class MainProcessor:
             Dicionário com estatísticas
         """
         return self.stats.copy()
+    
+    def get_cache_statistics(self) -> Dict:
+        """
+        Retorna estatísticas do cache
+        
+        Returns:
+            Dicionário com estatísticas do cache
+        """
+        return self.cache_manager.get_cache_statistics()
+    
+    def clear_cache(self, cache_type: Optional[str] = None, org_name: Optional[str] = None) -> int:
+        """
+        Limpa cache
+        
+        Args:
+            cache_type: Tipo específico para limpar (None = todos)
+            org_name: Organização específica (None = todas)
+            
+        Returns:
+            Número de arquivos removidos
+        """
+        return self.cache_manager.clear_cache(cache_type, org_name)
+    
+    def list_cached_organizations(self, cache_type: Optional[str] = None) -> List[str]:
+        """
+        Lista organizações que estão no cache
+        
+        Args:
+            cache_type: Tipo específico (None = todos os tipos)
+            
+        Returns:
+            Lista de nomes de organizações
+        """
+        return self.cache_manager.list_cached_organizations(cache_type)
 
 
 def main():
