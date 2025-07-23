@@ -46,7 +46,7 @@
   - Validate that extracted content is relevant to the organization
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-- [ ] 7. Create insurance-specific AI classification system
+- [x] 7. Create insurance-specific AI classification system
   - Adapt refs/classifier/sector_classifier.py for insurance classification
   - Create specific prompt for insurance industry identification
   - Implement response cleaning to ensure only "Yes" or "No" answers
