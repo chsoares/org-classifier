@@ -236,7 +236,7 @@ if orgs_df is not None and people_df is not None:
         st.caption(f"Mostrando {len(filtered_orgs)} de {len(orgs_df)} organizações")
         
         # Seção 2: People.csv
-        st.subheader("Dados das Pessoas")
+        st.subheader("Pessoas")
         st.caption("Visualização completa do arquivo people.csv com filtros.")
         
         # Primeira linha: busca
