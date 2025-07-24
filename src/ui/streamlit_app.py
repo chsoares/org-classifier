@@ -14,8 +14,8 @@ from pathlib import Path
 
 # Configuração da página
 st.set_page_config(
-    page_title="COP29 Insurance Classification",
-    page_icon="🏢",
+    page_title="org classifier",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -23,7 +23,6 @@ st.set_page_config(
 st.title("org classifier")
 
 # Função para carregar dados
-@st.cache_data
 def load_data():
     """Carrega os dados dos CSVs"""
     try:
@@ -154,7 +153,7 @@ if orgs_df is not None and people_df is not None:
             st.dataframe(
                 insurance_display,
                 use_container_width=True,
-                height=300,
+                height=500,
                 hide_index=True
             )
             
@@ -183,7 +182,7 @@ if orgs_df is not None and people_df is not None:
             st.dataframe(
                 insurance_people_display,
                 use_container_width=True,
-                height=400
+                height=500
             )
             
             st.caption(f"Total: {len(insurance_people_df)} pessoas de seguradoras")
@@ -307,7 +306,7 @@ if orgs_df is not None and people_df is not None:
         st.caption(f"Mostrando {len(filtered_people)} de {len(people_df)} pessoas")
 
                 # Seção 4: Correção Manual
-        st.subheader("Correção Manual")
+        st.subheader("Correção manual")
         st.caption("Corrigir classificações incorretas manualmente.")
         
         with st.container(border=True):
@@ -346,7 +345,6 @@ if orgs_df is not None and people_df is not None:
                         
                         # Salvar correção
                         if save_correction(orgs_df, people_df, selected_org, new_value):
-                            st.success(f"✅ Correção salva! {selected_org} → {new_classification}")
                             st.rerun()
                         else:
                             st.error("❌ Erro ao salvar correção")
