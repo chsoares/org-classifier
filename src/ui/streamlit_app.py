@@ -321,7 +321,7 @@ if orgs_df is not None and people_df is not None:
         # Dropdown com todas as organizações
         org_options = sorted(orgs_df['organization_name'].dropna().unique())
         selected_org = st.selectbox(
-            "Selecionar Organização:",
+            "Selecionar organização:",
             [""] + org_options,
             help="Escolha a organização para corrigir"
         )
