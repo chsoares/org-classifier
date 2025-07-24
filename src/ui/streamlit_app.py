@@ -305,49 +305,48 @@ if orgs_df is not None and people_df is not None:
         
         st.caption(f"Mostrando {len(filtered_people)} de {len(people_df)} pessoas")
 
-                # Seção 4: Correção Manual
+        # Seção 4: Correção Manual
         st.subheader("Correção manual")
         st.caption("Corrigir classificações incorretas manualmente.")
-        
-        with st.container(border=True):
-            # Dropdown com todas as organizações
-            org_options = sorted(orgs_df['organization_name'].dropna().unique())
-            selected_org = st.selectbox(
-                "Selecionar Organização:",
-                [""] + org_options,
-                help="Escolha a organização para corrigir"
+    
+        # Dropdown com todas as organizações
+        org_options = sorted(orgs_df['organization_name'].dropna().unique())
+        selected_org = st.selectbox(
+            "Selecionar Organização:",
+            [""] + org_options,
+            help="Escolha a organização para corrigir"
+        )
+        if selected_org:
+            # Mostrar classificação atual
+            current_classification = orgs_df[orgs_df['organization_name'] == selected_org]['is_insurance'].iloc[0]
+            if pd.isna(current_classification):
+                current_text = "Não classificada"
+            elif current_classification:
+                current_text = "Seguradora"
+            else:
+                current_text = "Não-seguradora"
+            
+            st.info(f"**Atual:** {current_text}")
+    
+        if selected_org:
+            # Dropdown para nova classificação
+            new_classification = st.selectbox(
+                "Nova Classificação:",
+                ["", "Seguradora", "Não-seguradora"],
+                help="Escolha a nova classificação"
             )
-            if selected_org:
-                # Mostrar classificação atual
-                current_classification = orgs_df[orgs_df['organization_name'] == selected_org]['is_insurance'].iloc[0]
-                if pd.isna(current_classification):
-                    current_text = "Não classificada"
-                elif current_classification:
-                    current_text = "Seguradora"
-                else:
-                    current_text = "Não-seguradora"
-                
-                st.info(f"**Atual:** {current_text}")
-        
-            if selected_org:
-                # Dropdown para nova classificação
-                new_classification = st.selectbox(
-                    "Nova Classificação:",
-                    ["", "Seguradora", "Não-seguradora"],
-                    help="Escolha a nova classificação"
-                )
-        
-                # Botão para salvar
-                if selected_org and new_classification:
-                    if st.button("💾 Salvar Correção", type="primary"):
-                        # Converter para boolean
-                        new_value = True if new_classification == "Seguradora" else False
-                        
-                        # Salvar correção
-                        if save_correction(orgs_df, people_df, selected_org, new_value):
-                            st.rerun()
-                        else:
-                            st.error("❌ Erro ao salvar correção")
+    
+            # Botão para salvar
+            if selected_org and new_classification:
+                if st.button("💾 Salvar Correção", type="primary"):
+                    # Converter para boolean
+                    new_value = True if new_classification == "Seguradora" else False
+                    
+                    # Salvar correção
+                    if save_correction(orgs_df, people_df, selected_org, new_value):
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao salvar correção")
 
 else:
     st.error("❌ Não foi possível carregar os dados. Verifique se os arquivos existem em data/results/")
