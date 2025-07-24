@@ -162,18 +162,27 @@ if orgs_df is not None and people_df is not None:
             st.info("Nenhuma seguradora identificada ainda.")
         
         # Seção 3: Tabela de pessoas de seguradoras
-        st.subheader("Pessoas de Seguradoras")
+        st.subheader("Pessoas")
         st.caption("Participantes da COP29 que trabalham em organizações seguradoras.")
     
         insurance_people_df = people_df[people_df['is_insurance'] == True].copy()
         
         if len(insurance_people_df) > 0:
-            # Remover colunas desnecessárias e renomear
-            display_columns = [col for col in insurance_people_df.columns 
-                             if col not in ['is_insurance', 'Home organization']]
-            insurance_people_display = insurance_people_df[display_columns]
+            # Definir ordem das colunas desejada
+            desired_columns = ['Type', 'Nominated by', 'Home organization_normalized', 'Name']
             
-            # Renomear coluna home_organization_normalized para "Organização"
+            # Filtrar apenas colunas que existem no DataFrame
+            available_columns = [col for col in desired_columns if col in insurance_people_df.columns]
+            
+            # Adicionar outras colunas que não estão na lista desejada (exceto is_insurance e Home organization)
+            other_columns = [col for col in insurance_people_df.columns 
+                           if col not in desired_columns + ['is_insurance', 'Home organization']]
+            
+            # Combinar colunas na ordem desejada
+            final_columns = available_columns + other_columns
+            insurance_people_display = insurance_people_df[final_columns]
+            
+            # Renomear coluna home_organization_normalized para "Home organization"
             if 'Home organization_normalized' in insurance_people_display.columns:
                 insurance_people_display = insurance_people_display.rename(
                     columns={'Home organization_normalized': 'Home organization'}
