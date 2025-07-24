@@ -11,7 +11,7 @@ from pathlib import Path
 def analyze_results():
     """Analisa os resultados do processamento"""
     
-    print("📊 ANÁLISE DOS RESULTADOS - COP29 INSURANCE CLASSIFICATION")
+    print("📊 ANÁLISE DOS RESULTADOS")
     print("=" * 70)
     
     # Carregar dados
