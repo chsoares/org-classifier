@@ -84,64 +84,86 @@ class DataProcessor:
     
     def extract_relevant_columns(self, df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
         """
-        Extrai apenas as colunas relevantes de um DataFrame
+        Extrai apenas as colunas relevantes de um DataFrame com mapeamento de sinônimos
         
         Args:
             df: DataFrame da aba
             sheet_name: Nome da aba (para logging)
             
         Returns:
-            DataFrame com apenas as colunas relevantes
+            DataFrame com apenas as colunas relevantes e nomes padronizados
         """
-        required_cols = self.config['required_columns']
+        # Mapeamento de sinônimos de colunas (V2.0 improvement)
+        column_synonyms = {
+            'Nominated by': ['Nominated by', 'Nominator'],
+            'Organization': ['Home organization', 'Organization', 'Home Organization'],
+            'Name': ['Name']
+        }
+        
+        # Colunas padronizadas que queremos no output final
+        standard_columns = ['Nominated by', 'Name', 'Organization']
+        
         available_cols = df.columns.tolist()
         
         self.logger.debug(f"🔍 Processando aba '{sheet_name}':")
         self.logger.debug(f"   Colunas disponíveis: {available_cols}")
         
-        # Verificar quais colunas existem
+        # Mapear colunas disponíveis para nomes padronizados
+        column_mapping = {}
         missing_cols = []
-        existing_cols = []
         
-        for col in required_cols:
-            if col in available_cols:
-                existing_cols.append(col)
-            else:
-                missing_cols.append(col)
+        for standard_col in standard_columns:
+            found = False
+            synonyms = column_synonyms.get(standard_col, [standard_col])
+            
+            for synonym in synonyms:
+                if synonym in available_cols:
+                    column_mapping[synonym] = standard_col
+                    found = True
+                    self.logger.debug(f"   ✅ '{synonym}' -> '{standard_col}'")
+                    break
+            
+            if not found:
+                missing_cols.append(standard_col)
+                self.logger.warning(f"   ⚠️ Coluna '{standard_col}' não encontrada (sinônimos: {synonyms})")
         
-        if missing_cols:
-            self.logger.warning(f"⚠️ Colunas ausentes em '{sheet_name}': {missing_cols}")
-        
-        if not existing_cols:
+        if not column_mapping:
             self.logger.error(f"❌ Nenhuma coluna relevante encontrada em '{sheet_name}'")
             return pd.DataFrame()  # DataFrame vazio
         
-        # Extrair apenas as colunas existentes
-        filtered_df = df[existing_cols].copy()
+        # Extrair e renomear colunas
+        cols_to_extract = list(column_mapping.keys())
+        filtered_df = df[cols_to_extract].copy()
+        
+        # Renomear para nomes padronizados
+        filtered_df = filtered_df.rename(columns=column_mapping)
         
         # Adicionar colunas ausentes como NaN
         for col in missing_cols:
             filtered_df[col] = None
         
         # Reordenar colunas na ordem esperada
-        filtered_df = filtered_df[required_cols]
+        filtered_df = filtered_df[standard_columns]
         
-        # 1. PRIMEIRO: Dropar linhas com valores NA em Home organization
-        na_values_to_drop = [
-            "Not applicable", "Not Applicable", "not applicable", 
-            "-", ".", "none", "None", "NONE", "N/A", "n/a", "NA", "na"
-        ]
+        # 1. PRIMEIRO: Dropar linhas com valores NA em Home organization (se a coluna existir)
+        if 'Home organization' in filtered_df.columns:
+            na_values_to_drop = [
+                "Not applicable", "Not Applicable", "not applicable", 
+                "-", ".", "none", "None", "NONE", "N/A", "n/a", "NA", "na"
+            ]
+            
+            initial_count = len(filtered_df)
+            # Dropar linhas onde Home organization é exatamente um dos valores NA
+            filtered_df = filtered_df[~filtered_df['Home organization'].isin(na_values_to_drop)]
+            dropped_count = initial_count - len(filtered_df)
+            
+            if dropped_count > 0:
+                self.logger.debug(f"🗑️ Removidas {dropped_count} linhas com valores NA em '{sheet_name}'")
         
-        initial_count = len(filtered_df)
-        # Dropar linhas onde Home organization é exatamente um dos valores NA
-        filtered_df = filtered_df[~filtered_df['Home organization'].isin(na_values_to_drop)]
-        dropped_count = initial_count - len(filtered_df)
-        
-        if dropped_count > 0:
-            self.logger.debug(f"🗑️ Removidas {dropped_count} linhas com valores NA em '{sheet_name}'")
-        
-        # 2. DEPOIS: Para Party overflow, adicionar país apenas para organizações governamentais
-        if sheet_name.lower() == "party overflow" and len(filtered_df) > 0:
+        # 2. DEPOIS: Para Party overflow, adicionar país apenas para organizações governamentais (se colunas existirem)
+        if (sheet_name.lower() == "party overflow" and len(filtered_df) > 0 and 
+            'Home organization' in filtered_df.columns and 'Nominated by' in filtered_df.columns):
+            
             self.logger.debug(f"🔄 Aplicando lógica inteligente para '{sheet_name}': adicionando país apenas a organizações governamentais")
             
             # Palavras-chave que indicam organizações governamentais
@@ -179,7 +201,7 @@ class DataProcessor:
             
             self.logger.debug(f"   Adicionado país a {combined_count} organizações governamentais")
         
-        self.logger.debug(f"✅ Extraídas {len(existing_cols)} colunas de '{sheet_name}' ({len(filtered_df)} linhas)")
+        self.logger.debug(f"✅ Extraídas {len(cols_to_extract)} colunas de '{sheet_name}' ({len(filtered_df)} linhas)")
         
         return filtered_df
     
@@ -254,16 +276,28 @@ class DataProcessor:
         
         self.logger.debug(f"Valores considerados nulos: {null_values}")
         
-        # Remover linhas onde 'Home organization' contém valores nulos
+        # Determinar qual coluna de organização usar (V2.0 compatibility)
+        org_column = None
+        if 'Home organization' in df.columns:
+            org_column = 'Home organization'
+        elif 'Organization' in df.columns:
+            org_column = 'Organization'
+        else:
+            self.logger.warning("⚠️ Nenhuma coluna de organização encontrada para limpeza")
+            return df
+        
+        self.logger.debug(f"Usando coluna '{org_column}' para limpeza")
+        
+        # Remover linhas onde a coluna de organização contém valores nulos
         # Isso captura tanto valores diretos quanto combinados (ex: "Albania Not Applicable")
         mask = pd.Series([True] * len(df), index=df.index)
         
         for null_value in null_values:
             # Verificar valores exatos
-            exact_match = df['Home organization'] == null_value
+            exact_match = df[org_column] == null_value
             
             # Verificar valores que terminam com o valor nulo (para casos como "Albania Not Applicable")
-            ends_with_match = df['Home organization'].str.endswith(f" {null_value}", na=False)
+            ends_with_match = df[org_column].str.endswith(f" {null_value}", na=False)
             
             # Combinar as duas condições
             current_mask = exact_match | ends_with_match
@@ -278,7 +312,7 @@ class DataProcessor:
             
             # Mostrar estatísticas dos valores removidos
             removed_df = df[~mask]
-            removed_counts = removed_df['Home organization'].value_counts()
+            removed_counts = removed_df[org_column].value_counts()
             for value, count in removed_counts.items():
                 self.logger.debug(f"   '{value}': {count} linhas removidas")
         else:
@@ -311,13 +345,19 @@ class DataProcessor:
         if missing_cols:
             issues.append(f"Colunas ausentes: {missing_cols}")
         
-        # Verificar se há dados em Home organization
+        # Verificar se há dados na coluna de organização (V2.0 compatibility)
+        org_column = None
         if 'Home organization' in df.columns:
-            null_orgs = df['Home organization'].isnull().sum()
+            org_column = 'Home organization'
+        elif 'Organization' in df.columns:
+            org_column = 'Organization'
+        
+        if org_column:
+            null_orgs = df[org_column].isnull().sum()
             total_rows = len(df)
             null_percentage = (null_orgs / total_rows) * 100
             
-            self.logger.info(f"📈 Organizações nulas: {null_orgs}/{total_rows} ({null_percentage:.1f}%)")
+            self.logger.info(f"📈 Organizações nulas em '{org_column}': {null_orgs}/{total_rows} ({null_percentage:.1f}%)")
             
             if null_percentage > 50:
                 issues.append(f"Muitas organizações nulas: {null_percentage:.1f}%")
@@ -337,9 +377,216 @@ class DataProcessor:
             self.logger.success("✅ Validação de qualidade passou!")
             return True
     
+    def process_multiple_excel_files(self, raw_dir: str = "data/raw") -> pd.DataFrame:
+        """
+        Método principal V2.0 que processa múltiplos arquivos Excel
+        
+        Args:
+            raw_dir: Diretório com arquivos Excel
+            
+        Returns:
+            DataFrame processado e validado com dados de todos os arquivos
+        """
+        self.logger.info("🚀 Iniciando processamento V2.0 - múltiplos arquivos Excel")
+        
+        try:
+            # 1. Encontrar todos os arquivos Excel
+            raw_path = Path(raw_dir)
+            excel_files = list(raw_path.glob("*.xlsx"))
+            
+            if not excel_files:
+                raise FileNotFoundError(f"Nenhum arquivo Excel encontrado em {raw_dir}")
+            
+            self.logger.info(f"📁 Encontrados {len(excel_files)} arquivos Excel:")
+            for file in excel_files:
+                self.logger.info(f"   - {file.name}")
+            
+            # 2. Processar cada arquivo e combinar
+            all_data = []
+            
+            for excel_file in excel_files:
+                filename = excel_file.stem  # Nome sem extensão (ex: COP29)
+                self.logger.info(f"📊 Processando {excel_file.name}...")
+                
+                # Carregar e processar arquivo individual
+                sheets = self.load_excel_data(str(excel_file))
+                merged_df = self.merge_spreadsheets(sheets)
+                cleaned_df = self.clean_null_organizations(merged_df)
+                
+                # Adicionar coluna File ANTES da coluna Type
+                cleaned_df = self.add_file_source_column(cleaned_df, filename)
+                
+                all_data.append(cleaned_df)
+                self.logger.info(f"✅ {excel_file.name}: {len(cleaned_df)} linhas processadas")
+            
+            # 3. Combinar todos os dados
+            self.logger.info("🔄 Combinando dados de todos os arquivos...")
+            final_df = pd.concat(all_data, ignore_index=True)
+            
+            # 4. Validar qualidade
+            if not self.validate_data_quality(final_df):
+                self.logger.warning("⚠️ Dados passaram na validação com avisos")
+            
+            # 5. Salvar dados processados
+            output_path = Path("data/processed/merged_data.csv")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            final_df.to_csv(output_path, index=False, encoding='utf-8')
+            self.logger.info(f"💾 Dados combinados salvos em: {output_path}")
+            
+            # Log estatísticas finais
+            self.logger.info(f"📊 Estatísticas finais:")
+            self.logger.info(f"   Total de linhas: {len(final_df)}")
+            self.logger.info(f"   Arquivos processados: {len(excel_files)}")
+            
+            # Mostrar distribuição por arquivo
+            file_counts = final_df['File'].value_counts()
+            for file_name, count in file_counts.items():
+                self.logger.info(f"   {file_name}: {count} linhas")
+            
+            self.logger.success("✨ Processamento V2.0 concluído com sucesso!")
+            return final_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro no processamento V2.0: {str(e)}")
+            raise
+    
+    def add_file_source_column(self, df: pd.DataFrame, filename: str) -> pd.DataFrame:
+        """
+        Adiciona coluna File antes da coluna Type
+        
+        Args:
+            df: DataFrame para modificar
+            filename: Nome do arquivo fonte (sem extensão)
+            
+        Returns:
+            DataFrame com coluna File adicionada
+        """
+        # Criar nova coluna File
+        df['File'] = filename
+        
+        # Reordenar colunas para colocar File antes de Type
+        cols = df.columns.tolist()
+        
+        # Remover File da posição atual
+        cols.remove('File')
+        
+        # Encontrar posição de Type e inserir File antes
+        if 'Type' in cols:
+            type_index = cols.index('Type')
+            cols.insert(type_index, 'File')
+        else:
+            # Se não tem Type, colocar File no início
+            cols.insert(0, 'File')
+        
+        # Reordenar DataFrame
+        df = df[cols]
+        
+        return df
+    
+    def process_multiple_excel_files(self, raw_dir: str = "data/raw") -> pd.DataFrame:
+        """
+        Método principal V2.0 que processa múltiplos arquivos Excel
+        
+        Args:
+            raw_dir: Diretório com arquivos Excel
+            
+        Returns:
+            DataFrame processado e validado com dados de todos os arquivos
+        """
+        self.logger.info("🚀 Iniciando processamento V2.0 - Múltiplos arquivos Excel")
+        
+        try:
+            # 1. Encontrar todos os arquivos Excel
+            raw_path = Path(raw_dir)
+            excel_files = list(raw_path.glob("*.xlsx"))
+            
+            if not excel_files:
+                raise FileNotFoundError(f"Nenhum arquivo Excel encontrado em {raw_dir}")
+            
+            self.logger.info(f"📁 Encontrados {len(excel_files)} arquivos Excel:")
+            for file in excel_files:
+                self.logger.info(f"   - {file.name}")
+            
+            # 2. Processar cada arquivo e combinar
+            all_dataframes = []
+            
+            for excel_file in excel_files:
+                filename_without_ext = excel_file.stem  # Ex: "COP29"
+                self.logger.info(f"📂 Processando {excel_file.name}...")
+                
+                # Carregar e processar arquivo individual
+                sheets = self.load_excel_data(str(excel_file))
+                merged_df = self.merge_spreadsheets(sheets)
+                cleaned_df = self.clean_null_organizations(merged_df)
+                
+                # Adicionar coluna File ANTES da coluna Type
+                cleaned_df = self.add_file_source_column(cleaned_df, filename_without_ext)
+                
+                all_dataframes.append(cleaned_df)
+                self.logger.info(f"✅ {excel_file.name}: {len(cleaned_df)} linhas processadas")
+            
+            # 3. Combinar todos os DataFrames
+            self.logger.info("🔄 Combinando dados de todos os arquivos...")
+            final_df = pd.concat(all_dataframes, ignore_index=True)
+            
+            # 4. Validar qualidade final
+            if not self.validate_data_quality(final_df):
+                self.logger.warning("⚠️ Dados passaram na validação com avisos")
+            
+            # 5. Salvar dados processados
+            output_path = Path("data/processed/merged_data.csv")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            final_df.to_csv(output_path, index=False, encoding='utf-8')
+            self.logger.info(f"💾 Dados combinados salvos em: {output_path}")
+            
+            # Estatísticas finais
+            self.logger.success("✨ Processamento V2.0 concluído com sucesso!")
+            self.logger.info(f"📊 Estatísticas finais:")
+            self.logger.info(f"   Total de arquivos: {len(excel_files)}")
+            self.logger.info(f"   Total de linhas: {len(final_df)}")
+            
+            # Mostrar distribuição por arquivo
+            file_counts = final_df['File'].value_counts()
+            for file_name, count in file_counts.items():
+                self.logger.info(f"   {file_name}: {count} linhas")
+            
+            return final_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro no processamento V2.0: {str(e)}")
+            raise
+    
+    def add_file_source_column(self, df: pd.DataFrame, filename: str) -> pd.DataFrame:
+        """
+        Adiciona coluna File antes da coluna Type para rastrear origem dos dados
+        
+        Args:
+            df: DataFrame processado
+            filename: Nome do arquivo sem extensão (ex: "COP29")
+            
+        Returns:
+            DataFrame com coluna File adicionada
+        """
+        # Criar nova coluna File
+        df_with_file = df.copy()
+        df_with_file['File'] = filename
+        
+        # Reordenar colunas para colocar File antes de Type
+        cols = df_with_file.columns.tolist()
+        
+        # Remover File da posição atual e inserir antes de Type
+        cols.remove('File')
+        type_index = cols.index('Type')
+        cols.insert(type_index, 'File')
+        
+        df_with_file = df_with_file[cols]
+        
+        self.logger.debug(f"✅ Coluna 'File' adicionada com valor '{filename}'")
+        return df_with_file
+    
     def process_excel_file(self, file_path: str = None) -> pd.DataFrame:
         """
-        Método principal que executa todo o pipeline de processamento
+        Método de compatibilidade V1.0 - processa arquivo único
         
         Args:
             file_path: Caminho para o arquivo Excel (opcional)
@@ -347,7 +594,7 @@ class DataProcessor:
         Returns:
             DataFrame processado e validado
         """
-        self.logger.info("🚀 Iniciando processamento completo do Excel")
+        self.logger.info("🚀 Iniciando processamento V1.0 - arquivo único")
         
         try:
             # 1. Carregar dados
@@ -369,11 +616,11 @@ class DataProcessor:
             cleaned_df.to_csv(output_path, index=False, encoding='utf-8')
             self.logger.info(f"💾 Dados salvos em: {output_path}")
             
-            self.logger.success("✨ Processamento do Excel concluído com sucesso!")
+            self.logger.success("✨ Processamento V1.0 concluído com sucesso!")
             return cleaned_df
             
         except Exception as e:
-            self.logger.error(f"❌ Erro no processamento: {str(e)}")
+            self.logger.error(f"❌ Erro no processamento V1.0: {str(e)}")
             raise
 
 

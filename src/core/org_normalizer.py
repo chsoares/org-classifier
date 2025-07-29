@@ -50,8 +50,8 @@ class OrganizationNormalizer:
         """
         self.logger.info("📊 Extraindo organizações únicas...")
         
-        # Contar ocorrências de cada organização
-        org_counts = df['Home organization'].value_counts()
+        # Contar ocorrências de cada organização (V2.0: nome de coluna atualizado)
+        org_counts = df['Organization'].value_counts()
         
         # Criar DataFrame com organizações únicas
         unique_orgs_df = pd.DataFrame({
@@ -88,6 +88,9 @@ class OrganizationNormalizer:
         # Converter para string e limpar
         cleaned = str(name).strip()
         
+        # NOVO: Remover aspas duplas (problema identificado na v2.0)
+        cleaned = cleaned.replace('"', '').replace('""', '')
+        
         # Remover caracteres especiais comuns
         cleaned = cleaned.replace(',', '').replace('.', '').replace('&', 'and')
         
@@ -116,7 +119,8 @@ class OrganizationNormalizer:
             ('american', 'european'), ('america', 'europe'),
             ('north', 'south'), ('east', 'west'),
             ('development', 'investment'), ('bank', 'fund'),
-            ('international', 'national'), ('global', 'local')
+            ('international', 'national'), ('global', 'local'),
+            ('ministry', 'university'), ('government', 'company')
         ]
         
         # Verificar se há conflitos de palavras-chave
@@ -124,12 +128,21 @@ class OrganizationNormalizer:
             if (word1 in clean1 and word2 in clean2) or (word2 in clean1 and word1 in clean2):
                 return False
         
-        # Verificar se compartilham pelo menos 50% das palavras principais
+        # MELHORADO: Verificar casos especiais de organizações muito similares
+        # Casos como "World Bank Group" vs "The World Bank Group"
+        if clean1.replace('the ', '') == clean2.replace('the ', ''):
+            return True
+        
+        # Casos como "United Nations" vs "UN" ou "UNDP" vs "United Nations Development Programme"
+        if self._check_acronym_match(clean1, clean2):
+            return True
+        
+        # Verificar se compartilham pelo menos palavras principais
         words1 = set(clean1.split())
         words2 = set(clean2.split())
         
         # Remover palavras muito comuns que não são distintivas
-        common_words = {'the', 'of', 'and', 'for', 'in', 'on', 'at', 'to', 'a', 'an'}
+        common_words = {'the', 'of', 'and', 'for', 'in', 'on', 'at', 'to', 'a', 'an', 'ltd', 'llc', 'inc', 'corp', 'sa', 'se'}
         words1 = words1 - common_words
         words2 = words2 - common_words
         
@@ -142,8 +155,40 @@ class OrganizationNormalizer:
         
         word_overlap = len(intersection) / len(union) if union else 0
         
-        # Exigir pelo menos 30% de sobreposição de palavras
-        return word_overlap >= 0.3
+        # MELHORADO: Reduzir threshold para pegar mais casos similares
+        return word_overlap >= 0.25
+    
+    def _check_acronym_match(self, org1: str, org2: str) -> bool:
+        """
+        Verifica se uma organização é acrônimo da outra
+        
+        Args:
+            org1: Primeira organização
+            org2: Segunda organização
+            
+        Returns:
+            True se uma é acrônimo da outra
+        """
+        # Casos conhecidos de acrônimos
+        acronym_pairs = [
+            ('un', 'united nations'),
+            ('undp', 'united nations development programme'),
+            ('unep', 'united nations environment programme'),
+            ('who', 'world health organization'),
+            ('fao', 'food and agriculture organization'),
+            ('unesco', 'united nations educational scientific and cultural organization'),
+            ('unicef', 'united nations children fund'),
+            ('eu', 'european union'),
+            ('usa', 'united states of america'),
+            ('uk', 'united kingdom'),
+            ('uae', 'united arab emirates')
+        ]
+        
+        for acronym, full_name in acronym_pairs:
+            if (org1 == acronym and full_name in org2) or (org2 == acronym and full_name in org1):
+                return True
+        
+        return False
 
     def find_similar_organizations(self, org_list: List[str]) -> Dict[str, str]:
         """
@@ -269,11 +314,11 @@ class OrganizationNormalizer:
         """
         self.logger.info("🔄 Atualizando dataset principal com nomes normalizados...")
         
-        # Criar nova coluna com nomes normalizados
-        main_df['Home organization_normalized'] = main_df['Home organization'].map(mapping).fillna(main_df['Home organization'])
+        # Criar nova coluna com nomes normalizados (V2.0: usar coluna Organization)
+        main_df['Organization_normalized'] = main_df['Organization'].map(mapping).fillna(main_df['Organization'])
         
         # Contar quantas linhas foram atualizadas
-        updated_count = (main_df['Home organization'] != main_df['Home organization_normalized']).sum()
+        updated_count = (main_df['Organization'] != main_df['Organization_normalized']).sum()
         
         self.logger.success(f"✨ Atualizadas {updated_count} linhas no dataset principal")
         
