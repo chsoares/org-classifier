@@ -266,6 +266,139 @@ class ResultMerger:
             self.logger.error(f"❌ Erro no merge: {str(e)}")
             raise
     
+    def create_multi_file_organizations_csv(self, data: pd.DataFrame, 
+                                          organizations_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Cria organizations.csv V2.0 com contagens de participantes por arquivo
+        
+        Args:
+            data: DataFrame principal com coluna 'File'
+            organizations_df: DataFrame com resultados de classificação
+            
+        Returns:
+            DataFrame de organizações com colunas participants_{filename}
+        """
+        self.logger.info("📊 Criando organizations.csv V2.0 com contagens multi-arquivo...")
+        
+        try:
+            # Determinar coluna de organização
+            org_column = 'Organization' if 'Organization' in data.columns else 'Home organization'
+            
+            # Obter arquivos únicos
+            if 'File' not in data.columns:
+                self.logger.warning("⚠️ Coluna 'File' não encontrada, usando contagem única")
+                unique_files = ['total']
+            else:
+                unique_files = sorted(data['File'].unique())
+            
+            self.logger.info(f"📁 Arquivos encontrados: {unique_files}")
+            
+            # Contar participantes por organização e arquivo
+            if 'File' in data.columns:
+                counts_by_file = data.groupby([org_column, 'File']).size().unstack(fill_value=0)
+            else:
+                counts_by_file = data.groupby(org_column).size().to_frame('total')
+            
+            # Calcular total
+            counts_by_file['participants_total'] = counts_by_file.sum(axis=1)
+            
+            # Renomear colunas para formato participants_{filename}
+            column_mapping = {}
+            for col in counts_by_file.columns:
+                if col != 'participants_total':
+                    column_mapping[col] = f'participants_{col}'
+            
+            counts_by_file = counts_by_file.rename(columns=column_mapping)
+            
+            # Criar DataFrame final combinando com dados de classificação
+            final_orgs_df = organizations_df.copy()
+            
+            # Fazer merge com contagens
+            final_orgs_df = final_orgs_df.merge(
+                counts_by_file, 
+                left_on='organization_name', 
+                right_index=True, 
+                how='left'
+            )
+            
+            # Preencher valores ausentes com 0
+            participant_cols = [col for col in final_orgs_df.columns if col.startswith('participants_')]
+            for col in participant_cols:
+                final_orgs_df[col] = final_orgs_df[col].fillna(0).astype(int)
+            
+            # Reordenar colunas
+            base_cols = ['organization_name']
+            participant_cols = sorted([col for col in final_orgs_df.columns if col.startswith('participants_')])
+            other_cols = [col for col in final_orgs_df.columns if col not in base_cols + participant_cols]
+            
+            final_cols = base_cols + participant_cols + other_cols
+            final_orgs_df = final_orgs_df[final_cols]
+            
+            self.logger.success(f"✨ Organizations.csv V2.0 criado: {len(final_orgs_df)} organizações")
+            self.logger.info(f"📊 Colunas de participantes: {participant_cols}")
+            
+            return final_orgs_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao criar organizations.csv V2.0: {str(e)}")
+            raise
+    
+    def create_simplified_people_csv(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Cria people.csv V2.0 com coluna única de organização normalizada
+        
+        Args:
+            data: DataFrame principal com dados processados
+            
+        Returns:
+            DataFrame de pessoas com estrutura simplificada
+        """
+        self.logger.info("👥 Criando people.csv V2.0 simplificado...")
+        
+        try:
+            people_df = data.copy()
+            
+            # Determinar coluna de organização
+            org_column = 'Organization' if 'Organization' in people_df.columns else 'Home organization'
+            
+            # Renomear coluna de organização para nome padrão
+            if org_column != 'Home organization':
+                people_df = people_df.rename(columns={org_column: 'Home organization'})
+            
+            # Remover colunas duplicadas de organização se existirem
+            cols_to_remove = []
+            for col in people_df.columns:
+                if 'organization' in col.lower() and col != 'Home organization':
+                    cols_to_remove.append(col)
+            
+            if cols_to_remove:
+                people_df = people_df.drop(columns=cols_to_remove)
+                self.logger.info(f"🗑️ Removidas colunas duplicadas: {cols_to_remove}")
+            
+            # Garantir que coluna File existe
+            if 'File' not in people_df.columns:
+                people_df['File'] = 'unknown'
+                self.logger.warning("⚠️ Coluna 'File' não encontrada, adicionada com valor 'unknown'")
+            
+            # Reordenar colunas: File, Type, Nominated by, Home organization, Name, is_insurance, outras
+            base_cols = ['File', 'Type', 'Nominated by', 'Home organization', 'Name']
+            if 'is_insurance' in people_df.columns:
+                base_cols.append('is_insurance')
+            
+            other_cols = [col for col in people_df.columns if col not in base_cols]
+            final_cols = [col for col in base_cols if col in people_df.columns] + other_cols
+            
+            people_df = people_df[final_cols]
+            
+            self.logger.success(f"✨ People.csv V2.0 criado: {len(people_df)} pessoas")
+            self.logger.info(f"📊 Colunas: {list(people_df.columns)}")
+            
+            return people_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao criar people.csv V2.0: {str(e)}")
+            raise
+    
     def export_results(self, merged_df: pd.DataFrame, 
                       output_dir: str = "data/results",
                       base_filename: str = None) -> Dict[str, str]:

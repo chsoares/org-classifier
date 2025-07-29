@@ -51,10 +51,8 @@ def save_correction(orgs_df, people_df, org_name, new_classification):
         orgs_df.loc[orgs_df['organization_name'] == org_name, 'processing_status'] = 'manual_correction'
         orgs_df.loc[orgs_df['organization_name'] == org_name, 'processed_at'] = datetime.now().isoformat()
         
-        # Atualizar people.csv - usar a coluna correta baseada na estrutura dos dados
-        if 'Home organization_normalized' in people_df.columns:
-            people_df.loc[people_df['Home organization_normalized'] == org_name, 'is_insurance'] = new_classification
-        elif 'Home organization' in people_df.columns:
+        # V2.0: Usar coluna 'Home organization' (já normalizada)
+        if 'Home organization' in people_df.columns:
             people_df.loc[people_df['Home organization'] == org_name, 'is_insurance'] = new_classification
         
         # Salvar arquivos
@@ -168,25 +166,19 @@ if orgs_df is not None and people_df is not None:
         insurance_people_df = people_df[people_df['is_insurance'] == True].copy()
         
         if len(insurance_people_df) > 0:
-            # Definir ordem das colunas desejada
-            desired_columns = ['Type', 'Nominated by', 'Home organization_normalized', 'Name']
+            # V2.0: Definir ordem das colunas (estrutura simplificada)
+            desired_columns = ['File', 'Type', 'Nominated by', 'Home organization', 'Name']
             
             # Filtrar apenas colunas que existem no DataFrame
             available_columns = [col for col in desired_columns if col in insurance_people_df.columns]
             
-            # Adicionar outras colunas que não estão na lista desejada (exceto is_insurance e Home organization)
+            # Adicionar outras colunas que não estão na lista desejada (exceto is_insurance)
             other_columns = [col for col in insurance_people_df.columns 
-                           if col not in desired_columns + ['is_insurance', 'Home organization']]
+                           if col not in desired_columns + ['is_insurance']]
             
             # Combinar colunas na ordem desejada
             final_columns = available_columns + other_columns
             insurance_people_display = insurance_people_df[final_columns]
-            
-            # Renomear coluna home_organization_normalized para "Home organization"
-            if 'Home organization_normalized' in insurance_people_display.columns:
-                insurance_people_display = insurance_people_display.rename(
-                    columns={'Home organization_normalized': 'Home organization'}
-                )
             
             st.dataframe(
                 insurance_people_display,
@@ -266,6 +258,15 @@ if orgs_df is not None and people_df is not None:
                 ["Todos"] + sorted(people_df['Nominated by'].unique()) if 'Nominated by' in people_df.columns else ["Todos"]
             )
         
+        # V2.0: Adicionar filtro por arquivo se disponível
+        if 'File' in people_df.columns:
+            file_filter = st.selectbox(
+                "Filtrar por Arquivo:",
+                ["Todos"] + sorted(people_df['File'].unique())
+            )
+        else:
+            file_filter = "Todos"
+        
         with col3:
             insurance_people_filter = st.selectbox(
                 "Filtrar por is_insurance:",
@@ -276,7 +277,7 @@ if orgs_df is not None and people_df is not None:
         filtered_people = people_df.copy()
         
         if people_search:
-            search_columns = ['Name', 'Home organization_normalized']
+            search_columns = ['Name', 'Home organization']
             mask = False
             for col in search_columns:
                 if col in filtered_people.columns:
@@ -296,15 +297,12 @@ if orgs_df is not None and people_df is not None:
         elif insurance_people_filter == "Não Classificadas":
             filtered_people = filtered_people[filtered_people['is_insurance'].isna()]
         
-        # Remover coluna Home organization e renomear home_organization_normalized
-        display_people = filtered_people.copy()
-        if 'Home organization' in display_people.columns:
-            display_people = display_people.drop(columns=['Home organization'])
+        # V2.0: Aplicar filtro por arquivo
+        if file_filter != "Todos" and 'File' in people_df.columns:
+            filtered_people = filtered_people[filtered_people['File'] == file_filter]
         
-        if 'Home organization_normalized' in display_people.columns:
-            display_people = display_people.rename(
-                columns={'Home organization_normalized': 'Home organization'}
-            )
+        # V2.0: Estrutura já simplificada, não precisa renomear colunas
+        display_people = filtered_people.copy()
         
         st.dataframe(
             display_people,

@@ -99,16 +99,24 @@ class MasterOrchestrator:
             
             self.logger.info(f"✅ Arquivo encontrado: {self.paths['input_excel']}")
             
-            # ETAPA 2: Merge dos dados
-            self.logger.info("\n🔄 ETAPA 2: Fazendo merge dos dados")
+            # ETAPA 2: Merge dos dados (V2.0 - Multi-file processing)
+            self.logger.info("\n🔄 ETAPA 2: Fazendo merge dos dados (V2.0)")
             self.logger.info("-" * 40)
             
-            merged_df = self.data_processor.process_excel_file(self.paths['input_excel'])
-            merged_df.to_csv(self.paths['merged_data'], index=False)
+            # Usar novo método V2.0 que processa múltiplos arquivos Excel
+            merged_df = self.data_processor.process_multiple_excel_files()
+            # Arquivo já é salvo automaticamente pelo process_multiple_excel_files
             results['merged_data'] = self.paths['merged_data']
             
-            self.logger.info(f"✅ Dados merged salvos: {self.paths['merged_data']}")
+            self.logger.info(f"✅ Dados V2.0 merged salvos: {self.paths['merged_data']}")
             self.logger.info(f"📊 Total de registros: {len(merged_df)}")
+            
+            # Mostrar distribuição por arquivo
+            if 'File' in merged_df.columns:
+                file_counts = merged_df['File'].value_counts()
+                self.logger.info(f"📁 Distribuição por arquivo:")
+                for file_name, count in file_counts.items():
+                    self.logger.info(f"   • {file_name}: {count} registros")
             
             # ETAPA 3: Normalização
             self.logger.info("\n🧹 ETAPA 3: Normalizando dados")
@@ -119,7 +127,9 @@ class MasterOrchestrator:
             normalized_df.to_csv(self.paths['normalized_data'], index=False)
             results['normalized_data'] = self.paths['normalized_data']
             
-            unique_orgs = normalized_df['Home organization'].nunique()
+            # Determinar coluna de organização (V2.0 compatibility)
+            org_column = 'Organization' if 'Organization' in normalized_df.columns else 'Home organization'
+            unique_orgs = normalized_df[org_column].nunique()
             self.logger.info(f"✅ Dados normalizados salvos: {self.paths['normalized_data']}")
             self.logger.info(f"🏢 Organizações únicas: {unique_orgs}")
             
@@ -180,12 +190,16 @@ class MasterOrchestrator:
         Returns:
             DataFrame de organizações
         """
-        # Extrair organizações únicas
-        org_counts = normalized_df['Home organization'].value_counts()
+        # Extrair organizações únicas (V2.0 compatibility)
+        org_column = 'Organization' if 'Organization' in normalized_df.columns else 'Home organization'
+        org_counts = normalized_df[org_column].value_counts()
         
-        organizations_df = pd.DataFrame({
+        # V2.0: Criar estrutura base e usar ResultMerger para contagens multi-arquivo
+        from core.result_merger import ResultMerger
+        result_merger = ResultMerger()
+        
+        base_organizations_df = pd.DataFrame({
             'organization_name': org_counts.index,
-            'participant_count': org_counts.values,
             'is_insurance': None,  # Será preenchido pela pipeline
             'website_url': None,
             'search_method': None,
@@ -194,6 +208,11 @@ class MasterOrchestrator:
             'error_message': None,
             'processed_at': None
         })
+        
+        # Usar método V2.0 para adicionar contagens por arquivo
+        organizations_df = result_merger.create_multi_file_organizations_csv(
+            normalized_df, base_organizations_df
+        )
         
         self.logger.info(f"📋 Criadas {len(organizations_df)} organizações únicas")
         
@@ -284,16 +303,22 @@ class MasterOrchestrator:
         people_df = normalized_df.copy()
         people_df['is_insurance'] = None
         
-        # Fazer matching
+        # Fazer matching (V2.0 compatibility)
+        org_column = 'Organization' if 'Organization' in people_df.columns else 'Home organization'
         matched_count = 0
         for idx, row in people_df.iterrows():
-            org_name = row['Home organization']
+            org_name = row[org_column]
             if org_name in org_lookup:
                 people_df.at[idx, 'is_insurance'] = org_lookup[org_name]
                 matched_count += 1
         
         classification_rate = (matched_count / len(people_df) * 100) if len(people_df) > 0 else 0
         self.logger.info(f"📊 Pessoas classificadas: {matched_count}/{len(people_df)} ({classification_rate:.1f}%)")
+        
+        # V2.0: Usar ResultMerger para criar estrutura simplificada
+        from core.result_merger import ResultMerger
+        result_merger = ResultMerger()
+        people_df = result_merger.create_simplified_people_csv(people_df)
         
         return people_df
     

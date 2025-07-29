@@ -529,7 +529,31 @@ class DataProcessor:
             self.logger.info("🔄 Combinando dados de todos os arquivos...")
             final_df = pd.concat(all_dataframes, ignore_index=True)
             
-            # 4. Validar qualidade final
+            # 4. Limpeza final pós-combinação
+            self.logger.info("🧹 Limpeza final pós-combinação...")
+            initial_count = len(final_df)
+            
+            # Remover duplicatas completas
+            final_df = final_df.drop_duplicates()
+            duplicates_removed = initial_count - len(final_df)
+            if duplicates_removed > 0:
+                self.logger.info(f"🗑️ Removidas {duplicates_removed} linhas duplicadas")
+            
+            # Remover linhas com organizações nulas (caso tenham passado)
+            org_column = 'Organization' if 'Organization' in final_df.columns else 'Home organization'
+            if org_column in final_df.columns:
+                null_orgs_before = final_df[org_column].isnull().sum()
+                final_df = final_df.dropna(subset=[org_column])
+                null_orgs_removed = null_orgs_before - final_df[org_column].isnull().sum()
+                if null_orgs_removed > 0:
+                    self.logger.info(f"🗑️ Removidas {null_orgs_removed} linhas com organizações nulas")
+            
+            final_count = len(final_df)
+            total_removed = initial_count - final_count
+            if total_removed > 0:
+                self.logger.info(f"✨ Limpeza final: {total_removed} linhas removidas, {final_count} linhas restantes")
+            
+            # 5. Validar qualidade final
             if not self.validate_data_quality(final_df):
                 self.logger.warning("⚠️ Dados passaram na validação com avisos")
             
