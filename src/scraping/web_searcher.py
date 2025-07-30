@@ -59,11 +59,45 @@ class WebSearcher:
         
         # Sites irrelevantes para filtrar
         self.irrelevant_domains = {
+            # Redes sociais
             'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'linkedin.com',
             'youtube.com', 'tiktok.com', 'pinterest.com', 'reddit.com',
+            
+            # Motores de busca
             'google.com', 'bing.com', 'yahoo.com', 'duckduckgo.com',
             'webcache.googleusercontent.com', 'translate.google.com',
-            'amazon.com', 'ebay.com', 'alibaba.com'
+            'baidu.com', 'sogou.com', 'yandex.com', 'ask.com',
+            
+            # E-commerce
+            'amazon.com', 'ebay.com', 'alibaba.com', 'mercadolivre.com.br',
+            
+            # Fóruns e Q&A
+            'stackoverflow.com', 'stackexchange.com', 'superuser.com',
+            'serverfault.com', 'askubuntu.com', 'mathoverflow.net',
+            'quora.com', 'answers.yahoo.com', 'answers.com',
+            'reddit.com', 'discourse.org',
+            
+            # Fóruns específicos por domínio
+            'forum.', 'forums.', 'community.', 'discuss.', 'discussion.',
+            
+            # Sites de notícias/blogs genéricos
+            'medium.com', 'blogger.com', 'wordpress.com', 'tumblr.com',
+            'substack.com', 'ghost.org',
+            
+            # Diretórios e agregadores
+            'yellowpages.com', 'whitepages.com', 'yelp.com', 'foursquare.com',
+            'zoominfo.com', 'crunchbase.com', 'bloomberg.com',
+            
+            # Sites de tradução e cache
+            'translate.google.com', 'translate.bing.com', 'deepl.com',
+            'webcache.googleusercontent.com', 'archive.org', 'web.archive.org',
+            
+            # Plataformas de desenvolvimento
+            'github.com', 'gitlab.com', 'bitbucket.org', 'sourceforge.net',
+            
+            # Sites de emprego
+            'indeed.com', 'glassdoor.com', 'monster.com', 'careerbuilder.com',
+            'jobs.com', 'workday.com'
         }
         
         self.logger.debug(f"Configurações: timeout={self.timeout}s, retries={self.max_retries}")
@@ -255,12 +289,15 @@ class WebSearcher:
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Usar seletores que funcionaram no debug
+            # Usar seletores mais precisos baseado em testes reais
             working_selectors = [
-                'li.b_algo h2 a',  # Seletor principal
-                '.b_algo a',       # Alternativo
-                'h2 a'             # Mais geral
+                'li.b_algo h2 a',           # Seletor principal - mais preciso
+                'h2 a',                     # Alternativo para títulos principais  
+                '.b_algo h2 a'              # Backup sem li
             ]
+            
+            # Coletar todas as URLs candidatas primeiro
+            candidate_urls = []
             
             for selector in working_selectors:
                 results = soup.select(selector)
@@ -268,10 +305,43 @@ class WebSearcher:
                 
                 for result in results[:5]:  # Primeiros 5 resultados
                     href = result.get('href', '')
-                    
-                    if href and href.startswith('http') and self._is_valid_result(href, org_name):
-                        self.logger.debug(f"URL válida encontrada: {href}")
-                        return href
+                    if href and href.startswith('http'):
+                        candidate_urls.append(href)
+            
+            # Remover duplicatas mantendo ordem
+            seen = set()
+            unique_urls = []
+            for url in candidate_urls:
+                if url not in seen:
+                    seen.add(url)
+                    unique_urls.append(url)
+            
+            # Ordenar por relevância de domínio
+            url_scores = []
+            for url in unique_urls[:10]:  # Limitar a 10 para performance
+                parsed = urlparse(url)
+                domain = parsed.netloc.lower()
+                if domain.startswith('www.'):
+                    domain = domain[4:]
+                
+                relevance = self._calculate_domain_relevance(domain, org_name)
+                
+                # Bonus adicional para domínios que parecem oficiais
+                if self._is_likely_official_domain(domain, org_name):
+                    relevance *= 1.3
+                    self.logger.debug(f"  🏢 Bonus para domínio oficial: {domain}")
+                
+                url_scores.append((url, relevance, domain))
+            
+            # Ordenar por relevância (maior primeiro), depois por simplicidade do domínio
+            url_scores.sort(key=lambda x: (x[1], -len(x[2].split('.'))), reverse=True)
+            
+            # Testar URLs em ordem de relevância
+            for url, score, domain in url_scores:
+                self.logger.debug(f"Testando URL (relevância {score:.2f}): {url}")
+                if self._is_valid_result(url, org_name):
+                    self.logger.debug(f"URL válida encontrada: {url}")
+                    return url
             
             self.logger.debug("Nenhuma URL válida encontrada no Bing")
             return None
@@ -303,8 +373,11 @@ class WebSearcher:
             if domain.startswith('www.'):
                 domain = domain[4:]
             
-            # Filtrar domínios irrelevantes
-            if any(irrelevant in domain for irrelevant in self.irrelevant_domains):
+            # Filtrar domínios irrelevantes (mas permitir domínios principais de empresas conhecidas)
+            main_corporate_domains = ['google.com', 'microsoft.com', 'apple.com', 'amazon.com']
+            is_main_corporate = any(domain == corp_domain for corp_domain in main_corporate_domains)
+            
+            if not is_main_corporate and any(irrelevant in domain for irrelevant in self.irrelevant_domains):
                 self.logger.debug(f"URL rejeitada - domínio irrelevante: {domain}")
                 return False
             
@@ -321,25 +394,223 @@ class WebSearcher:
             
             # Filtrar URLs que claramente não são sites oficiais
             bad_patterns = [
-                '/search?', '/q=', '/query=', '/results?'
+                # Padrões de busca
+                '/search?', '/q=', '/query=', '/results?', '/find?',
+                
+                # Padrões de fóruns e Q&A
+                '/questions/', '/question/', '/answers/', '/answer/',
+                '/forum/', '/forums/', '/community/', '/discuss/',
+                '/thread/', '/topic/', '/post/', '/posts/',
+                '/ask/', '/help/', '/support/',
+                
+                # Padrões de conteúdo genérico
+                '/blog/', '/news/', '/article/', '/articles/',
+                '/review/', '/reviews/', '/rating/', '/ratings/',
+                '/tag/', '/tags/', '/category/', '/categories/',
+                
+                # Padrões de sites específicos
+                'stackoverflow.com/', 'stackexchange.com/', 'quora.com/',
+                'reddit.com/', 'medium.com/', 'answers.yahoo.com/',
+                
+                # Padrões de tradução e cache
+                'translate.google.com/', 'webcache.googleusercontent.com/',
+                'archive.org/', 'web.archive.org/',
+                
+                # Padrões de diretórios
+                'yellowpages.com/', 'whitepages.com/', 'yelp.com/',
+                'zoominfo.com/', 'crunchbase.com/'
             ]
             
             if any(pattern in full_url for pattern in bad_patterns):
                 self.logger.debug(f"URL rejeitada - padrão suspeito na URL: {full_url}")
                 return False
             
-            # Validar se a URL responde
+            # Verificação específica para sites de fóruns e Q&A
+            forum_indicators = [
+                'forum', 'community', 'discuss', 'questions', 'answers',
+                'stackoverflow', 'stackexchange', 'quora', 'reddit'
+            ]
+            
+            if any(indicator in domain or indicator in full_url for indicator in forum_indicators):
+                self.logger.debug(f"URL rejeitada - site de fórum/Q&A detectado: {full_url}")
+                return False
+            
+            # NOVO: Validar relevância do domínio com o nome da organização
+            relevance_score = self._calculate_domain_relevance(domain, org_name)
+            self.logger.debug(f"Score de relevância do domínio: {relevance_score:.2f}")
+            
+            # Se o domínio é muito irrelevante, rejeitar mesmo que responda
+            if relevance_score < 0.1:
+                self.logger.debug(f"URL rejeitada - domínio irrelevante (score: {relevance_score:.2f})")
+                return False
+            
+            # Para domínios com alta relevância, ser menos restritivo na validação de conectividade
+            if relevance_score >= 0.7:
+                # Domínios muito relevantes: apenas verificar se não são claramente inválidos
+                self.logger.debug(f"URL com alta relevância - validação relaxada: {url}")
+                return True
+            
+            # Para domínios com relevância média/baixa, validar conectividade
             if not self.validate_website_url(url):
                 self.logger.debug(f"URL rejeitada - não responde: {url}")
                 return False
             
             # Se chegou até aqui, é uma URL válida
-            self.logger.debug(f"URL aceita: {url}")
+            self.logger.debug(f"URL aceita: {url} (relevância: {relevance_score:.2f})")
             return True
             
         except Exception as e:
             self.logger.debug(f"Erro na validação de {url}: {str(e)}")
             return False
+    
+    def _calculate_domain_relevance(self, domain: str, org_name: str) -> float:
+        """
+        Calcula score de relevância entre domínio e nome da organização
+        
+        Args:
+            domain: Domínio da URL (ex: coldiretti.it)
+            org_name: Nome da organização (ex: Coldiretti)
+            
+        Returns:
+            Score de 0.0 a 1.0 (1.0 = muito relevante)
+        """
+        if not domain or not org_name:
+            return 0.0
+        
+        domain_clean = domain.lower().replace('-', ' ').replace('_', ' ')
+        org_clean = org_name.lower().replace('-', ' ').replace('_', ' ')
+        
+        # Extrair palavras significativas (> 2 caracteres)
+        org_words = [word for word in org_clean.split() if len(word) > 2]
+        
+        # Remover palavras comuns
+        common_words = {
+            'ltd', 'inc', 'corp', 'corporation', 'company', 'group', 'limited', 
+            'co', 'llc', 'se', 'sa', 'ag', 'gmbh', 'the', 'and', 'of', 'for'
+        }
+        distinctive_words = [word for word in org_words if word not in common_words]
+        words_to_check = distinctive_words if distinctive_words else org_words
+        
+        if not words_to_check:
+            return 0.0
+        
+        # Separar domínio principal de subdomínios
+        domain_parts = domain.split('.')
+        main_domain_part = domain_parts[0] if domain_parts else domain
+        
+        # Contar matches no domínio completo
+        matches = 0
+        for word in words_to_check:
+            if word in domain_clean:
+                matches += 1
+        
+        # Calcular score base
+        base_score = matches / len(words_to_check)
+        
+        # NOVO: Bonus significativo para domínios principais vs subdomínios
+        if len(words_to_check) == 1:
+            main_word = words_to_check[0]
+            
+            # Caso ideal: palavra exata no domínio principal (ex: coldiretti.it)
+            if main_word == main_domain_part:
+                base_score = 1.0
+                self.logger.debug(f"  🎯 Match perfeito no domínio principal: {main_word} = {main_domain_part}")
+            
+            # Caso bom: palavra no domínio principal mas não exata (ex: coldiretti-news.it)
+            elif main_word in main_domain_part:
+                base_score = 0.9
+                self.logger.debug(f"  ✅ Match no domínio principal: {main_word} em {main_domain_part}")
+            
+            # Caso subdomínio: palavra em subdomínio (ex: polo.coldiretti.it)
+            elif any(main_word in part for part in domain_parts[1:]):
+                base_score = 0.7  # Menor score para subdomínios
+                self.logger.debug(f"  ⚠️ Match em subdomínio: {main_word} em {domain}")
+        
+        # Bonus para domínios mais simples (menos subdomínios)
+        subdomain_count = len(domain_parts) - 2  # -2 para remover nome e TLD
+        if subdomain_count == 0:
+            base_score *= 1.2  # Bonus para domínio principal
+        elif subdomain_count == 1:
+            base_score *= 1.0  # Neutro para um subdomínio
+        else:
+            base_score *= 0.8  # Penalidade para múltiplos subdomínios
+        
+        # Penalty para domínios claramente irrelevantes
+        irrelevant_indicators = [
+            # Fóruns e discussões
+            'forum', 'forums', 'community', 'discuss', 'discussion', 'board', 'boards',
+            'qa', 'questions', 'answers', 'ask', 'help', 'support',
+            
+            # Conteúdo genérico
+            'blog', 'news', 'article', 'tag', 'search', 'directory', 'wiki',
+            'review', 'reviews', 'rating', 'ratings',
+            
+            # Sites específicos problemáticos
+            'stackoverflow', 'stackexchange', 'quora', 'reddit', 'medium',
+            'baidu', 'sina', 'qq', 'sogou', 'yandex',
+            'uol.com', 'globo.com', 'tuacasa', 'espaco-zen',
+            
+            # Padrões de subdomínios suspeitos
+            'translate', 'cache', 'webcache', 'archive', 'wayback',
+            'jobs', 'careers', 'hiring', 'recruitment',
+            'shop', 'store', 'buy', 'sell', 'marketplace',
+            
+            # Agregadores e diretórios
+            'yellowpages', 'whitepages', 'yelp', 'foursquare', 'zoominfo',
+            'crunchbase', 'bloomberg', 'reuters', 'associated-press'
+        ]
+        
+        for indicator in irrelevant_indicators:
+            if indicator in domain_clean:
+                base_score *= 0.1  # Penalidade severa
+                self.logger.debug(f"  ❌ Penalidade por indicador irrelevante: {indicator}")
+                break
+        
+        # Penalty para subdomínios suspeitos
+        suspicious_subdomains = [
+            'www', 'blog', 'news', 'forum', 'forums', 'community', 'discuss',
+            'shop', 'store', 'portal', 'polo', 'help', 'support', 'ask',
+            'questions', 'answers', 'qa', 'wiki', 'docs', 'translate'
+        ]
+        if domain_parts and domain_parts[0] in suspicious_subdomains:
+            base_score *= 0.8
+            self.logger.debug(f"  ⚠️ Penalidade por subdomínio suspeito: {domain_parts[0]}")
+        
+        return min(base_score, 1.0)
+    
+    def _is_likely_official_domain(self, domain: str, org_name: str) -> bool:
+        """
+        Verifica se um domínio parece ser o site oficial da organização
+        
+        Args:
+            domain: Domínio a verificar
+            org_name: Nome da organização
+            
+        Returns:
+            True se parece ser domínio oficial
+        """
+        if not domain or not org_name:
+            return False
+        
+        domain_parts = domain.split('.')
+        if len(domain_parts) < 2:
+            return False
+        
+        main_part = domain_parts[0]
+        org_clean = org_name.lower().replace(' ', '').replace('-', '').replace('_', '')
+        
+        # Casos que indicam domínio oficial:
+        # 1. Nome da organização exato no domínio principal
+        if org_clean in main_part or main_part in org_clean:
+            # 2. TLD apropriado (.com, .org, .it, .de, etc.)
+            tld = domain_parts[-1]
+            official_tlds = ['com', 'org', 'net', 'gov', 'edu', 'it', 'de', 'fr', 'uk', 'co', 'io']
+            if tld in official_tlds:
+                # 3. Não é subdomínio suspeito
+                if len(domain_parts) <= 3:  # dominio.com ou subdominio.dominio.com
+                    return True
+        
+        return False
     
     def validate_website_url(self, url: str) -> bool:
         """
@@ -356,13 +627,14 @@ class WebSearcher:
             response = requests.head(
                 url,
                 headers=self.headers,
-                timeout=self.timeout,
+                timeout=5,  # Timeout mais curto para validação
                 verify=False,
                 allow_redirects=True
             )
             
-            # Considerar códigos de sucesso
-            return response.status_code in [200, 301, 302, 303, 307, 308]
+            # Considerar códigos de sucesso e alguns erros que podem ser temporários
+            success_codes = [200, 301, 302, 303, 307, 308, 403, 405]  # 403/405 podem ser sites válidos com restrições
+            return response.status_code in success_codes
             
         except Exception:
             # Se HEAD falhar, tentar GET rápido
@@ -370,13 +642,32 @@ class WebSearcher:
                 response = requests.get(
                     url,
                     headers=self.headers,
-                    timeout=self.timeout // 2,  # Timeout menor para validação
+                    timeout=3,  # Timeout ainda menor para GET
                     verify=False,
                     allow_redirects=True,
                     stream=True  # Não baixar o conteúdo completo
                 )
-                return response.status_code in [200, 301, 302, 303, 307, 308]
+                success_codes = [200, 301, 302, 303, 307, 308, 403, 405]
+                return response.status_code in success_codes
             except Exception:
+                # Se ambos falharem, assumir que pode ser um problema temporário
+                # Para domínios que parecem legítimos, ser mais tolerante
+                parsed = urlparse(url)
+                domain = parsed.netloc.lower()
+                if domain.startswith('www.'):
+                    domain = domain[4:]
+                
+                # Domínios conhecidos que podem ter problemas temporários
+                known_domains = [
+                    'microsoft.com', 'apple.com', 'google.com', 'amazon.com',
+                    'facebook.com', 'twitter.com', 'linkedin.com', 'github.com',
+                    'coldiretti.it', 'allianz.com', 'bmw.com', 'volkswagen.com'
+                ]
+                
+                if any(known in domain for known in known_domains):
+                    self.logger.debug(f"Domínio conhecido com problema temporário: {domain}")
+                    return True
+                
                 return False
     
     def search_with_retry(self, org_name: str, max_attempts: int = 3) -> Tuple[Optional[str], str]:
