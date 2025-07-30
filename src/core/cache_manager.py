@@ -229,7 +229,7 @@ class CacheManager:
         removed_count = 0
         
         try:
-            if cache_type and org_name:
+            if cache_type is not None and org_name is not None:
                 # Limpar cache específico de uma organização
                 cache_file = self._get_cache_file_path(cache_type, org_name)
                 if cache_file.exists():
@@ -237,13 +237,23 @@ class CacheManager:
                     removed_count = 1
                     self.logger.info(f"🗑️ Cache removido: {cache_type} para {org_name}")
             
-            elif cache_type:
+            elif cache_type is not None:
                 # Limpar todos os caches de um tipo
                 cache_dir = self.cache_types[cache_type]
                 for cache_file in cache_dir.glob("*.json"):
                     cache_file.unlink()
                     removed_count += 1
                 self.logger.info(f"🗑️ Cache tipo {cache_type} limpo: {removed_count} arquivos")
+            
+            elif org_name is not None:
+                # Limpar todos os tipos de cache para uma organização específica
+                for cache_type_name, cache_dir in self.cache_types.items():
+                    cache_file = self._get_cache_file_path(cache_type_name, org_name)
+                    if cache_file.exists():
+                        cache_file.unlink()
+                        removed_count += 1
+                        self.logger.debug(f"🗑️ Cache removido: {cache_type_name} para {org_name}")
+                self.logger.info(f"🗑️ Todos os caches removidos para {org_name}: {removed_count} arquivos")
             
             else:
                 # Limpar todo o cache
